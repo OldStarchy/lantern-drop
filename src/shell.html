@@ -1,0 +1,191 @@
+<title>Lantern Drop</title>
+<meta name="claude:viewport-fit-sides" content="cover">
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Shippori+Mincho+B1:wght@700;800&family=M+PLUS+Rounded+1c:wght@400;500;700;800&display=swap">
+<style>
+/* Layout: one full-screen stage; the board canvas letterboxes to fit; menus are lacquer panels floating over the night river. Single deliberate night look. */
+:root{
+  --ink:#0a0f26;          /* night sky / page ground */
+  --lacquer:#151b3a;      /* panel surface */
+  --lacquer-2:#1e2650;    /* raised control */
+  --paper:#f4e7c8;        /* lantern-paper text */
+  --paper-dim:#b9ad93;    /* secondary text */
+  --amber:#f2a93b;        /* accent: lit lantern */
+  --amber-deep:#c9701f;
+  --jade:#4fcf8e;
+  --violet:#b48cf0;
+  --rule:rgba(244,231,200,.14);
+  --display:"Shippori Mincho B1","Hiragino Mincho ProN","Times New Roman",serif;
+  --body:"M PLUS Rounded 1c","Segoe UI","Helvetica Neue",Arial,sans-serif;
+  color-scheme:dark;
+}
+[hidden]{display:none!important;}
+html,body{height:100%;}
+body{background:var(--ink);color:var(--paper);font-family:var(--body);overflow:hidden;
+  padding-left:max(0px, env(safe-area-inset-left,0px));padding-right:max(0px, env(safe-area-inset-right,0px));
+  -webkit-user-select:none;user-select:none;-webkit-tap-highlight-color:transparent;touch-action:none;}
+#stage{position:relative;width:100%;height:100%;display:grid;place-items:center;overflow:hidden;}
+#game{display:block;touch-action:none;cursor:crosshair;}
+.overlay{position:absolute;inset:0;display:grid;place-items:center;padding-block:16px;
+  padding-left:max(16px, env(safe-area-inset-left,0px));padding-right:max(16px, env(safe-area-inset-right,0px));
+  background:radial-gradient(ellipse at 50% 40%, rgba(10,15,38,.55), rgba(10,15,38,.88));overflow:auto;}
+.overlay.clear{background:rgba(10,15,38,.35);}
+.panel{background:linear-gradient(180deg,var(--lacquer-2),var(--lacquer));border:1px solid var(--rule);
+  border-radius:14px;box-shadow:0 30px 80px rgba(0,0,0,.55), inset 0 1px 0 rgba(255,255,255,.06);
+  width:min(720px,100%);max-height:100%;display:flex;flex-direction:column;min-height:0;}
+.panel-head{display:flex;align-items:center;justify-content:space-between;gap:12px;padding:18px 22px 12px;border-bottom:1px solid var(--rule);}
+.panel-body{padding:16px 22px 22px;overflow:auto;min-height:0;display:flex;flex-direction:column;gap:18px;}
+h1,h2,h3{font-family:var(--display);font-weight:800;margin:0;text-wrap:balance;letter-spacing:.01em;}
+h2{font-size:1.6rem;color:var(--paper);}
+h3{font-size:.78rem;font-family:var(--body);font-weight:800;text-transform:uppercase;letter-spacing:.14em;color:var(--amber);}
+p{margin:0;line-height:1.55;color:var(--paper-dim);max-width:62ch;}
+/* Title */
+#title .wrap{display:flex;flex-direction:column;align-items:center;gap:22px;text-align:center;}
+#title h1{font-size:clamp(2.8rem,9vw,5.6rem);line-height:.95;color:var(--paper);
+  text-shadow:0 0 28px rgba(242,169,59,.55),0 0 2px rgba(255,220,160,.9);}
+#title h1 span{display:block;font-size:.34em;letter-spacing:.5em;color:var(--amber);text-shadow:none;margin-top:.5em;font-family:var(--body);font-weight:700;padding-left:.5em;}
+.menu{display:flex;flex-direction:column;gap:10px;width:min(320px,100%);}
+.btn{font:inherit;font-weight:700;font-size:1.05rem;color:var(--paper);background:var(--lacquer-2);
+  border:1px solid var(--rule);border-radius:10px;padding:12px 18px;cursor:pointer;text-align:center;transition:background .15s, transform .15s, box-shadow .15s;}
+.btn:hover{background:#28316a;}
+.btn.primary{background:linear-gradient(180deg,#f6b955,var(--amber-deep));color:#2a1405;border-color:transparent;box-shadow:0 0 24px rgba(242,169,59,.35);}
+.btn.primary:hover{background:linear-gradient(180deg,#ffc767,#d77b25);}
+.btn.small{font-size:.9rem;padding:8px 14px;}
+.btn:focus-visible,.seg button:focus-visible,input:focus-visible,.toggle:focus-visible,.lvl:focus-visible,.pw:focus-visible{outline:3px solid var(--amber);outline-offset:3px;}
+.nav-focus{outline:3px solid var(--amber)!important;outline-offset:3px;}
+.hint-line{font-size:.85rem;color:var(--paper-dim);}
+kbd{font-family:var(--body);font-size:.8em;background:var(--lacquer-2);border:1px solid var(--rule);border-radius:5px;padding:1px 6px;color:var(--paper);}
+/* Settings */
+.row{display:grid;grid-template-columns:minmax(0,1fr) auto;align-items:center;gap:8px 16px;}
+.row label,.row .lbl{font-weight:700;color:var(--paper);}
+.row small{display:block;font-weight:400;color:var(--paper-dim);font-size:.82rem;margin-top:2px;}
+.group{display:flex;flex-direction:column;gap:12px;padding-top:4px;}
+.range{display:flex;align-items:center;gap:10px;}
+.range input{width:min(180px,36vw);accent-color:var(--amber);}
+.range output{min-width:3ch;text-align:right;font-variant-numeric:tabular-nums;font-weight:800;color:var(--amber);}
+.seg{display:inline-flex;background:var(--ink);border:1px solid var(--rule);border-radius:9px;padding:3px;gap:2px;flex-wrap:wrap;}
+.seg button{font:inherit;font-size:.86rem;font-weight:700;color:var(--paper-dim);background:transparent;border:0;border-radius:7px;padding:6px 10px;cursor:pointer;}
+.seg button[aria-checked="true"]{background:var(--amber);color:#2a1405;}
+.toggle{appearance:none;-webkit-appearance:none;width:46px;height:26px;border-radius:13px;background:var(--ink);border:1px solid var(--rule);position:relative;cursor:pointer;transition:background .15s;margin:0;}
+.toggle::after{content:"";position:absolute;top:3px;left:3px;width:18px;height:18px;border-radius:50%;background:var(--paper-dim);transition:transform .15s, background .15s;}
+.toggle:checked{background:var(--amber-deep);}
+.toggle:checked::after{transform:translateX(20px);background:var(--paper);}
+.powers{display:grid;grid-template-columns:repeat(auto-fill,minmax(200px,1fr));gap:8px;}
+.pw{display:flex;gap:10px;align-items:flex-start;text-align:left;font:inherit;background:var(--ink);border:1px solid var(--rule);border-radius:10px;padding:10px;cursor:pointer;color:var(--paper);min-width:0;}
+.pw[aria-checked="true"]{border-color:var(--jade);box-shadow:inset 0 0 0 1px var(--jade);background:rgba(79,207,142,.08);}
+.pw .dot{flex:none;width:14px;height:14px;border-radius:50%;margin-top:3px;border:2px solid var(--paper-dim);}
+.pw[aria-checked="true"] .dot{background:var(--jade);border-color:var(--jade);box-shadow:0 0 10px var(--jade);}
+.pw b{display:block;font-size:.95rem;}
+.pw span{display:block;font-size:.8rem;color:var(--paper-dim);line-height:1.35;margin-top:2px;}
+.foot{display:flex;gap:10px;flex-wrap:wrap;justify-content:flex-end;padding:12px 22px 18px;border-top:1px solid var(--rule);}
+/* Levels */
+.levels{display:grid;grid-template-columns:repeat(auto-fill,minmax(150px,1fr));gap:10px;}
+.lvl{font:inherit;color:var(--paper);background:var(--ink);border:1px solid var(--rule);border-radius:10px;padding:12px;text-align:left;cursor:pointer;display:flex;flex-direction:column;gap:4px;min-width:0;}
+.lvl:hover{border-color:var(--amber);}
+.lvl .n{font-size:.72rem;letter-spacing:.14em;text-transform:uppercase;color:var(--amber);font-weight:800;}
+.lvl b{font-family:var(--display);font-size:1.05rem;}
+.lvl .s{font-size:.8rem;color:var(--paper-dim);font-variant-numeric:tabular-nums;}
+.lvl.done{border-color:rgba(242,169,59,.5);}
+/* Result */
+#result .panel{width:min(460px,100%);text-align:center;}
+#result .panel-body{align-items:center;}
+.bigscore{font-family:var(--display);font-size:2.6rem;color:var(--amber);font-variant-numeric:tabular-nums;}
+.stats{display:grid;grid-template-columns:auto auto;gap:4px 18px;font-variant-numeric:tabular-nums;}
+.stats dt{color:var(--paper-dim);text-align:left;}
+.stats dd{margin:0;text-align:right;font-weight:700;}
+/* corner buttons */
+#corner{position:absolute;top:calc(env(safe-area-inset-top,0px) + 8px);right:max(10px, env(safe-area-inset-right,0px));display:flex;gap:6px;}
+#corner button{font:inherit;font-size:.85rem;font-weight:700;color:var(--paper);background:rgba(21,27,58,.75);border:1px solid var(--rule);border-radius:8px;padding:6px 10px;cursor:pointer;}
+#rotate{position:absolute;inset:0;display:none;place-items:center;text-align:center;padding:24px;background:var(--ink);}
+@media (orientation:portrait) and (max-width:600px){ #rotate.show{display:grid;} }
+@media (prefers-reduced-motion:reduce){ *{transition:none!important;} }
+</style>
+
+<div id="stage">
+  <canvas id="game" aria-label="Lantern Drop game board"></canvas>
+  <div id="corner" hidden>
+    <button id="btnPause" type="button" aria-label="Pause">Pause</button>
+  </div>
+
+  <div id="title" class="overlay">
+    <div class="wrap">
+      <h1>Lantern Drop<span>A Festival Peg Game</span></h1>
+      <div class="menu">
+        <button class="btn primary nav" id="btnPlay" type="button">Play</button>
+        <button class="btn nav" id="btnLevels" type="button">Choose a level</button>
+        <button class="btn nav" id="btnSettings" type="button">Rules &amp; powers</button>
+        <button class="btn nav" id="btnHow" type="button">How to play</button>
+      </div>
+      <p class="hint-line">Mouse, touch, keyboard or controller. Light every amber lantern to clear the river.</p>
+    </div>
+  </div>
+
+  <div id="levels" class="overlay" hidden>
+    <div class="panel">
+      <div class="panel-head"><h2>Choose a level</h2><button class="btn small nav" data-back type="button">Back</button></div>
+      <div class="panel-body"><div class="levels" id="levelGrid"></div></div>
+    </div>
+  </div>
+
+  <div id="how" class="overlay" hidden>
+    <div class="panel">
+      <div class="panel-head"><h2>How to play</h2><button class="btn small nav" data-back type="button">Back</button></div>
+      <div class="panel-body">
+        <p>Fire a moonstone from the launcher at the top. Every lantern it touches lights up and is cleared when the shot ends. Light all the <b style="color:var(--amber)">amber lanterns</b> to win the level.</p>
+        <p><b style="color:var(--jade)">Jade lanterns</b> trigger a power. <b style="color:var(--violet)">Violet lanterns</b> are worth 500 and move every turn. The more amber you light, the higher the score multiplier climbs.</p>
+        <p>Land the moonstone in the drifting boat for a free ball. Light the last amber lantern for the Grand Finale, where the stone drops into one of five prize lanterns.</p>
+        <div class="group">
+          <h3>Controller</h3>
+          <p>Left stick aims, right stick or bumpers fine-tune, <kbd>A</kbd> fires, hold <kbd>Y</kbd> to fast-forward, <kbd>Menu</kbd> or <kbd>B</kbd> pauses.</p>
+          <h3>Keyboard</h3>
+          <p><kbd>←</kbd> <kbd>→</kbd> aim (hold <kbd>Shift</kbd> to fine-tune), <kbd>Space</kbd> fires, hold <kbd>F</kbd> to fast-forward, <kbd>Esc</kbd> pauses.</p>
+          <h3>Mouse and touch</h3>
+          <p>Point to aim and click to fire. On touch, drag to aim and lift your finger to fire. Lift above the launcher to cancel.</p>
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <div id="settings" class="overlay" hidden>
+    <div class="panel">
+      <div class="panel-head"><h2>Rules &amp; powers</h2><button class="btn small nav" data-back type="button">Done</button></div>
+      <div class="panel-body" id="settingsBody"></div>
+      <div class="foot">
+        <button class="btn small nav" id="btnClassic" type="button">Reset to classic rules</button>
+        <button class="btn small primary nav" data-back type="button">Done</button>
+      </div>
+    </div>
+  </div>
+
+  <div id="pause" class="overlay" hidden>
+    <div class="panel" style="width:min(380px,100%)">
+      <div class="panel-head"><h2>Paused</h2></div>
+      <div class="panel-body">
+        <div class="menu" style="width:100%">
+          <button class="btn primary nav" id="btnResume" type="button">Resume</button>
+          <button class="btn nav" id="btnPauseSettings" type="button">Rules &amp; powers</button>
+          <button class="btn nav" id="btnRestart" type="button">Restart level</button>
+          <button class="btn nav" id="btnQuit" type="button">Quit to title</button>
+        </div>
+        <p class="hint-line">Rule changes to lantern counts apply when a level starts. Everything else applies straight away.</p>
+      </div>
+    </div>
+  </div>
+
+  <div id="result" class="overlay" hidden>
+    <div class="panel">
+      <div class="panel-head" style="justify-content:center"><h2 id="resTitle">River cleared</h2></div>
+      <div class="panel-body">
+        <div class="bigscore" id="resScore">0</div>
+        <dl class="stats" id="resStats"></dl>
+        <div class="menu">
+          <button class="btn primary nav" id="btnNext" type="button">Next level</button>
+          <button class="btn nav" id="btnRetry" type="button">Play again</button>
+          <button class="btn nav" id="btnResTitle" type="button">Title</button>
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <div id="rotate"><p style="color:var(--paper)">Turn your phone sideways for the full river.</p></div>
+</div>
