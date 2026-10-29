@@ -52,7 +52,11 @@ p{margin:0;line-height:1.55;color:var(--paper-dim);max-width:62ch;}
 .btn.primary:hover{background:linear-gradient(180deg,#ffc767,#d77b25);}
 .btn.small{font-size:.9rem;padding:8px 14px;}
 .btn:focus-visible,.seg button:focus-visible,input:focus-visible,.toggle:focus-visible,.lvl:focus-visible,.pw:focus-visible{outline:3px solid var(--amber);outline-offset:3px;}
-.nav-focus{outline:3px solid var(--amber)!important;outline-offset:3px;}
+/* Controller and arrow-key focus: always visible, even when focus was moved by script */
+body.pad :focus{outline:3px solid var(--amber)!important;outline-offset:3px;}
+body.pad .btn:focus,body.pad .slot:focus,body.pad .lvl:focus,body.pad .pw:focus{box-shadow:0 0 0 6px rgba(242,169,59,.25), 0 0 22px rgba(242,169,59,.45);}
+body.pad .btn:not(.primary):focus{background:#28316a;}
+body.pad .seg button:focus{outline-offset:1px;}
 .hint-line{font-size:.85rem;color:var(--paper-dim);}
 kbd{font-family:var(--body);font-size:.8em;background:var(--lacquer-2);border:1px solid var(--rule);border-radius:5px;padding:1px 6px;color:var(--paper);}
 /* Settings */

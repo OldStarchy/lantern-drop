@@ -1033,6 +1033,8 @@ function pollPad(dt){
   const btn = i => !!(p.buttons[i] && (p.buttons[i].pressed || p.buttons[i].value > .5));
   const pressed = i => { const b = btn(i); const was = padPrev[i]; padPrev[i] = b; return b && !was; };
   const ax = p.axes[0]||0, ay = p.axes[1]||0, rx = p.axes[2]||0;
+  // Any controller activity switches the menus into "controller" highlighting.
+  if(p.buttons.some(b=>b && (b.pressed || b.value>.5)) || p.axes.some(v=>Math.abs(v)>.5)){ lastPadT = performance.now(); if(!padMode) setPadMode(true); }
   const dz = v => Math.abs(v) < .14 ? 0 : v;
   if(G.mode==='play'){
     if(G.state==='aim'){
@@ -1063,7 +1065,25 @@ function pollPad(dt){
     pressed(3); pressed(4); pressed(5); pressed(8);
   }
 }
-window.addEventListener('gamepadconnected', ()=>{ document.body.classList.add('pad'); });
+// Browsers only draw :focus-visible after keyboard input, so focus moved by the
+// controller would be invisible. Track the last input type and style focus ourselves.
+let padMode = false, lastPadT = -1e9;
+// Edge on Xbox can turn the controller into a mouse cursor; ask for raw gamepad input instead.
+try{ if('gamepadInputEmulation' in navigator) navigator.gamepadInputEmulation = 'gamepad'; }catch(e){}
+function setPadMode(on){
+  if(padMode === on) return;
+  padMode = on;
+  document.body.classList.toggle('pad', on);
+  if(on && overlayStack.length){
+    const el = document.activeElement;
+    if(!el || el===document.body || !currentOverlay()?.contains(el)) navFocus(0);
+  }
+}
+// Ignore pointer events that arrive right after controller input (Edge may synthesize them).
+const recentPad = () => performance.now() - lastPadT < 600;
+window.addEventListener('pointerdown', ()=>{ if(!recentPad()) setPadMode(false); }, {capture:true});
+window.addEventListener('mousemove', e=>{ if(!recentPad() && Math.abs(e.movementX)+Math.abs(e.movementY) > 3) setPadMode(false); }, {passive:true});
+window.addEventListener('keydown', e=>{ if(e.key==='Tab' || e.key.startsWith('Arrow')) setPadMode(true); }, {capture:true});
 
 /* --- DOM menu navigation (controller + keyboard) --- */
 let navIndex = 0;
