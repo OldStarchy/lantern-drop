@@ -94,8 +94,10 @@ const SHOTS_PER_LEVEL = 25;
     const camp = await page.evaluate(() => {
       const D = window.__LD; const R = D.R();
       const info = { balls: D.G.players[0].balls, pool: R.pool.join(','), infinite: R.infinite };
-      // force a quick win: light every amber but one, then let shots finish the level
+      // Force a win: light every amber but one, and give enough balls that random
+      // shots are certain to reach the last one (the test checks recording, not luck).
       D.L.pegs.filter(p => p.type === 'orange').slice(1).forEach(p => { p.hit = true; p.removed = true; });
+      D.G.players[0].balls = 400;
       for (let i = 0; i < 60000; i++) {
         if (D.G.state === 'aim') { if (D.G.banner) D.G.banner.t += 10; D.setAim(0.15 + Math.random() * (Math.PI - 0.3)); D.fire(); }
         D.update(1 / 20); if (D.G.state === 'done') break;
