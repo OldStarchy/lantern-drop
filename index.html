@@ -143,9 +143,9 @@ kbd{font-family:var(--body);font-size:.8em;background:var(--lacquer-2);border:1p
         <p>Land the moonstone in the drifting boat for a free ball. Light the last amber lantern for the Grand Finale, where the stone drops into one of five prize lanterns.</p>
         <div class="group">
           <h3>Controller</h3>
-          <p>Left stick aims, right stick or bumpers fine-tune, <kbd>A</kbd> fires, hold <kbd>Y</kbd> to fast-forward, <kbd>Menu</kbd> or <kbd>B</kbd> pauses.</p>
+          <p>Left stick aims, right stick or bumpers fine-tune, <kbd>A</kbd> fires, hold <kbd>Y</kbd> to fast-forward, <kbd>X</kbd> mutes, <kbd>Menu</kbd> or <kbd>B</kbd> pauses.</p>
           <h3>Keyboard</h3>
-          <p><kbd>←</kbd> <kbd>→</kbd> aim (hold <kbd>Shift</kbd> to fine-tune), <kbd>Space</kbd> fires, hold <kbd>F</kbd> to fast-forward, <kbd>Esc</kbd> pauses.</p>
+          <p><kbd>←</kbd> <kbd>→</kbd> aim (hold <kbd>Shift</kbd> to fine-tune), <kbd>Space</kbd> fires, hold <kbd>F</kbd> to fast-forward, <kbd>M</kbd> mutes, <kbd>Esc</kbd> pauses.</p>
           <h3>Mouse and touch</h3>
           <p>Point to aim and click to fire. On touch, drag to aim and lift your finger to fire. Lift above the launcher to cancel.</p>
         </div>
@@ -174,7 +174,8 @@ kbd{font-family:var(--body);font-size:.8em;background:var(--lacquer-2);border:1p
           <button class="btn nav" id="btnRestart" type="button">Restart level</button>
           <button class="btn nav" id="btnQuit" type="button">Quit to title</button>
         </div>
-        <p class="hint-line">Rule changes to lantern counts apply when a level starts. Everything else applies straight away.</p>
+        <div class="group" id="pauseSound" aria-label="Volume"></div>
+        <p class="hint-line">Press <kbd>M</kbd> or controller <kbd>X</kbd> during play to mute. Rule changes to lantern counts apply when a level starts.</p>
       </div>
     </div>
   </div>
@@ -657,8 +658,12 @@ kbd{font-family:var(--body);font-size:.8em;background:var(--lacquer-2);border:1p
   var G = {};                 // graph nodes (buses)
   var noiseBuf = null;
   var paused = false;
-  var musicVol = 0.6;
-  var sfxVol = 0.85;
+  var musicVol = 0.5;
+  var sfxVol = 0.6;
+  // Sliders are linear 0..1; loudness is roughly logarithmic, so square the value
+  // to make the low half of the slider useful.
+  function curve(v) { return v * v; }
+
   var userDuck = false;
   var feverActive = false;
   var feverTimer = null;
@@ -854,7 +859,8 @@ kbd{font-family:var(--body);font-size:.8em;background:var(--lacquer-2);border:1p
     lim.threshold.setValueAtTime(-4, t); lim.knee.setValueAtTime(0, t);
     lim.ratio.setValueAtTime(20, t); lim.attack.setValueAtTime(0.001, t); lim.release.setValueAtTime(0.08, t);
     var clip = ctx.createWaveShaper(); clip.curve = softClipCurve(); clip.oversample = 'none';
-    G.master = gainN(0.95);
+    // Overall output level, kept well below full scale so the game sits at a comfortable listening level.
+    G.master = gainN(0.55);
     chain(G.mix, comp, lim, clip, G.master, ctx.destination);
     G.comp = comp; G.lim = lim; G.clip = clip;
 
@@ -868,15 +874,15 @@ kbd{font-family:var(--body);font-size:.8em;background:var(--lacquer-2);border:1p
     G.conv = conv;
 
     // sfx bus
-    G.sfxBus = gainN(sfxVol);
+    G.sfxBus = gainN(curve(sfxVol));
     G.sfxBus.connect(G.mix);
-    G.sfxWet = gainN(sfxVol * 0.32);
+    G.sfxWet = gainN(curve(sfxVol) * 0.32);
     G.sfxWet.connect(G.revIn);
 
     // music: tracks -> musicIn -> duck -> musicVol -> mix (+ reverb send)
     G.musicIn = gainN(1);
     G.duck = gainN(1);
-    G.musicVol = gainN(musicVol);
+    G.musicVol = gainN(curve(musicVol));
     chain(G.musicIn, G.duck, G.musicVol, G.mix);
     G.musicWet = gainN(0.4);
     chain(G.musicVol, G.musicWet, G.revIn);
@@ -1833,11 +1839,11 @@ kbd{font-family:var(--body);font-size:.8em;background:var(--lacquer-2);border:1p
 
   api.setMusicVolume = ctl(function (v) {
     musicVol = clamp01(v);
-    if (ctx) smooth(G.musicVol.gain, musicVol, 0.08);
+    if (ctx) smooth(G.musicVol.gain, curve(musicVol), 0.08);
   });
   api.setSfxVolume = ctl(function (v) {
     sfxVol = clamp01(v);
-    if (ctx) { smooth(G.sfxBus.gain, sfxVol, 0.08); smooth(G.sfxWet.gain, sfxVol * 0.32, 0.08); }
+    if (ctx) { smooth(G.sfxBus.gain, curve(sfxVol), 0.08); smooth(G.sfxWet.gain, curve(sfxVol) * 0.32, 0.08); }
   });
 
   api.pegHit = sfx(pegHitImpl);
@@ -1938,7 +1944,7 @@ const CLASSIC = {
   strength:1, startPower:'none',
   guide:'short', boatSpeed:'normal', boatSize:'normal', gravity:'normal', scoreBalls:true,
   cheatDestiny:false, cheatFlame:false, cheatBridge:false,
-  music:0.6, sfx:0.8, speed:1
+  music:0.5, sfx:0.6, speed:1, muted:false
 };
 let S = load('ld.settings', CLASSIC);
 S = Object.assign({}, CLASSIC, S);
@@ -2110,7 +2116,7 @@ function startLevel(i){
   G.banner = {text:def.name, sub:L.hint, t:0, dur:2.8};
   G.mode = 'play';
   music('start', i);
-  sfx('setMusicVolume', S.music); sfx('setSfxVolume', S.sfx);
+  applyVolumes();
   showOverlay(null);
 }
 function shuffle(a){ for(let i=a.length-1;i>0;i--){ const j=Math.random()*(i+1)|0; [a[i],a[j]]=[a[j],a[i]]; } return a; }
@@ -2737,6 +2743,7 @@ const keys = {};
 window.addEventListener('keydown', e=>{
   unlockAudio();
   keys[e.key] = true;
+  if(e.key==='m'||e.key==='M'){ toggleMute(); }
   if(G.mode==='play'){
     if(e.key===' '||e.key==='Enter'){ e.preventDefault(); fire(); }
     if(e.key==='Escape'||e.key==='p'||e.key==='P'){ pauseGame(); }
@@ -2777,6 +2784,7 @@ function pollPad(dt){
     if(pressed(0)){ unlockAudio(); fire(); }
     fastForward = btn(3) || keys.f || keys.F;
     if(pressed(9) || pressed(1)) pauseGame();
+    if(pressed(2)) toggleMute();
     pressed(12); pressed(13); pressed(8);
   } else {
     // menu navigation
@@ -2841,7 +2849,21 @@ function backAction(){
   if(top==='result'){ toTitle(); return; }
   popOverlay(); sfx('ui');
 }
-function pauseGame(){ if(G.mode!=='play') return; G.mode='paused'; sfx('setPaused', true); fastForward=false; showOverlay('pause'); }
+function pauseGame(){ if(G.mode!=='play') return; G.mode='paused'; sfx('setPaused', true); fastForward=false; buildPauseSound(); showOverlay('pause'); }
+function buildPauseSound(){
+  const box = document.getElementById('pauseSound'); if(!box) return; box.innerHTML = '';
+  for(const [key, label] of [['music','Music'],['sfx','Effects']]){
+    const r = document.createElement('div'); r.className = 'row';
+    const l = document.createElement('label'); l.htmlFor = 'p-'+key; l.textContent = label;
+    const w = document.createElement('div'); w.className = 'range';
+    const i = document.createElement('input'); i.type='range'; i.id='p-'+key; i.min=0; i.max=1; i.step=0.05; i.value=S[key];
+    const o = document.createElement('output'); o.textContent = Math.round(S[key]*100);
+    i.oninput = ()=>{ S[key] = +i.value; o.textContent = Math.round(S[key]*100); if(S.muted){ S.muted=false; } save('ld.settings',S); applyVolumes(); };
+    w.append(i,o); r.append(l,w); box.appendChild(r);
+  }
+}
+function applyVolumes(){ sfx('setMusicVolume', S.muted?0:S.music); sfx('setSfxVolume', S.muted?0:S.sfx); }
+function toggleMute(){ S.muted = !S.muted; save('ld.settings',S); applyVolumes(); if(G.mode==='play' && L) G.texts.push({x:W/2, y:H/2, s:S.muted?'Sound off':'Sound on', t:0, big:true, col:'#f4e7c8'}); }
 function resumeGame(){ G.mode='play'; sfx('setPaused', false); showOverlay(null); lastFrame = performance.now(); }
 function toTitle(){ G.mode='title'; sfx('stopFever'); music('stop'); sfx('setPaused', false); showOverlay('title'); }
 
@@ -2937,11 +2959,11 @@ function buildSettings(){
   row(g6, 'Music', null, range('music', 0, 1, 0.05, v=>Math.round(v*100)));
   row(g6, 'Effects', null, range('sfx', 0, 1, 0.05, v=>Math.round(v*100)));
 }
-function applyLive(key){ if(key==='music') sfx('setMusicVolume', S.music); if(key==='sfx'){ sfx('setSfxVolume', S.sfx); sfx('ui'); } }
+function applyLive(key){ if(key==='music'||key==='sfx'){ if(S.muted) S.muted=false; save('ld.settings',S); applyVolumes(); if(key==='sfx') sfx('ui'); } }
 
 /* ================= audio unlock ================= */
 let audioUnlocked = false;
-function unlockAudio(){ if(audioUnlocked) return; audioUnlocked = true; sfx('unlock'); sfx('setMusicVolume', S.music); sfx('setSfxVolume', S.sfx); if(G.mode==='play') music('start', G.levelIndex); }
+function unlockAudio(){ if(audioUnlocked) return; audioUnlocked = true; sfx('unlock'); applyVolumes(); if(G.mode==='play') music('start', G.levelIndex); }
 document.addEventListener('pointerdown', unlockAudio, {capture:true});
 document.addEventListener('visibilitychange', ()=>{ if(document.hidden && G.mode==='play') pauseGame(); });
 

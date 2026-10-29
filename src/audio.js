@@ -18,8 +18,12 @@
   var G = {};                 // graph nodes (buses)
   var noiseBuf = null;
   var paused = false;
-  var musicVol = 0.6;
-  var sfxVol = 0.85;
+  var musicVol = 0.5;
+  var sfxVol = 0.6;
+  // Sliders are linear 0..1; loudness is roughly logarithmic, so square the value
+  // to make the low half of the slider useful.
+  function curve(v) { return v * v; }
+
   var userDuck = false;
   var feverActive = false;
   var feverTimer = null;
@@ -215,7 +219,8 @@
     lim.threshold.setValueAtTime(-4, t); lim.knee.setValueAtTime(0, t);
     lim.ratio.setValueAtTime(20, t); lim.attack.setValueAtTime(0.001, t); lim.release.setValueAtTime(0.08, t);
     var clip = ctx.createWaveShaper(); clip.curve = softClipCurve(); clip.oversample = 'none';
-    G.master = gainN(0.95);
+    // Overall output level, kept well below full scale so the game sits at a comfortable listening level.
+    G.master = gainN(0.55);
     chain(G.mix, comp, lim, clip, G.master, ctx.destination);
     G.comp = comp; G.lim = lim; G.clip = clip;
 
@@ -229,15 +234,15 @@
     G.conv = conv;
 
     // sfx bus
-    G.sfxBus = gainN(sfxVol);
+    G.sfxBus = gainN(curve(sfxVol));
     G.sfxBus.connect(G.mix);
-    G.sfxWet = gainN(sfxVol * 0.32);
+    G.sfxWet = gainN(curve(sfxVol) * 0.32);
     G.sfxWet.connect(G.revIn);
 
     // music: tracks -> musicIn -> duck -> musicVol -> mix (+ reverb send)
     G.musicIn = gainN(1);
     G.duck = gainN(1);
-    G.musicVol = gainN(musicVol);
+    G.musicVol = gainN(curve(musicVol));
     chain(G.musicIn, G.duck, G.musicVol, G.mix);
     G.musicWet = gainN(0.4);
     chain(G.musicVol, G.musicWet, G.revIn);
@@ -1194,11 +1199,11 @@
 
   api.setMusicVolume = ctl(function (v) {
     musicVol = clamp01(v);
-    if (ctx) smooth(G.musicVol.gain, musicVol, 0.08);
+    if (ctx) smooth(G.musicVol.gain, curve(musicVol), 0.08);
   });
   api.setSfxVolume = ctl(function (v) {
     sfxVol = clamp01(v);
-    if (ctx) { smooth(G.sfxBus.gain, sfxVol, 0.08); smooth(G.sfxWet.gain, sfxVol * 0.32, 0.08); }
+    if (ctx) { smooth(G.sfxBus.gain, curve(sfxVol), 0.08); smooth(G.sfxWet.gain, curve(sfxVol) * 0.32, 0.08); }
   });
 
   api.pegHit = sfx(pegHitImpl);

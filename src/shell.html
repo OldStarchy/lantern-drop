@@ -136,9 +136,9 @@ kbd{font-family:var(--body);font-size:.8em;background:var(--lacquer-2);border:1p
         <p>Land the moonstone in the drifting boat for a free ball. Light the last amber lantern for the Grand Finale, where the stone drops into one of five prize lanterns.</p>
         <div class="group">
           <h3>Controller</h3>
-          <p>Left stick aims, right stick or bumpers fine-tune, <kbd>A</kbd> fires, hold <kbd>Y</kbd> to fast-forward, <kbd>Menu</kbd> or <kbd>B</kbd> pauses.</p>
+          <p>Left stick aims, right stick or bumpers fine-tune, <kbd>A</kbd> fires, hold <kbd>Y</kbd> to fast-forward, <kbd>X</kbd> mutes, <kbd>Menu</kbd> or <kbd>B</kbd> pauses.</p>
           <h3>Keyboard</h3>
-          <p><kbd>←</kbd> <kbd>→</kbd> aim (hold <kbd>Shift</kbd> to fine-tune), <kbd>Space</kbd> fires, hold <kbd>F</kbd> to fast-forward, <kbd>Esc</kbd> pauses.</p>
+          <p><kbd>←</kbd> <kbd>→</kbd> aim (hold <kbd>Shift</kbd> to fine-tune), <kbd>Space</kbd> fires, hold <kbd>F</kbd> to fast-forward, <kbd>M</kbd> mutes, <kbd>Esc</kbd> pauses.</p>
           <h3>Mouse and touch</h3>
           <p>Point to aim and click to fire. On touch, drag to aim and lift your finger to fire. Lift above the launcher to cancel.</p>
         </div>
@@ -167,7 +167,8 @@ kbd{font-family:var(--body);font-size:.8em;background:var(--lacquer-2);border:1p
           <button class="btn nav" id="btnRestart" type="button">Restart level</button>
           <button class="btn nav" id="btnQuit" type="button">Quit to title</button>
         </div>
-        <p class="hint-line">Rule changes to lantern counts apply when a level starts. Everything else applies straight away.</p>
+        <div class="group" id="pauseSound" aria-label="Volume"></div>
+        <p class="hint-line">Press <kbd>M</kbd> or controller <kbd>X</kbd> during play to mute. Rule changes to lantern counts apply when a level starts.</p>
       </div>
     </div>
   </div>

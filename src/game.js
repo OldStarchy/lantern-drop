@@ -40,7 +40,7 @@ const CLASSIC = {
   strength:1, startPower:'none',
   guide:'short', boatSpeed:'normal', boatSize:'normal', gravity:'normal', scoreBalls:true,
   cheatDestiny:false, cheatFlame:false, cheatBridge:false,
-  music:0.6, sfx:0.8, speed:1
+  music:0.5, sfx:0.6, speed:1, muted:false
 };
 let S = load('ld.settings', CLASSIC);
 S = Object.assign({}, CLASSIC, S);
@@ -212,7 +212,7 @@ function startLevel(i){
   G.banner = {text:def.name, sub:L.hint, t:0, dur:2.8};
   G.mode = 'play';
   music('start', i);
-  sfx('setMusicVolume', S.music); sfx('setSfxVolume', S.sfx);
+  applyVolumes();
   showOverlay(null);
 }
 function shuffle(a){ for(let i=a.length-1;i>0;i--){ const j=Math.random()*(i+1)|0; [a[i],a[j]]=[a[j],a[i]]; } return a; }
@@ -839,6 +839,7 @@ const keys = {};
 window.addEventListener('keydown', e=>{
   unlockAudio();
   keys[e.key] = true;
+  if(e.key==='m'||e.key==='M'){ toggleMute(); }
   if(G.mode==='play'){
     if(e.key===' '||e.key==='Enter'){ e.preventDefault(); fire(); }
     if(e.key==='Escape'||e.key==='p'||e.key==='P'){ pauseGame(); }
@@ -879,6 +880,7 @@ function pollPad(dt){
     if(pressed(0)){ unlockAudio(); fire(); }
     fastForward = btn(3) || keys.f || keys.F;
     if(pressed(9) || pressed(1)) pauseGame();
+    if(pressed(2)) toggleMute();
     pressed(12); pressed(13); pressed(8);
   } else {
     // menu navigation
@@ -943,7 +945,21 @@ function backAction(){
   if(top==='result'){ toTitle(); return; }
   popOverlay(); sfx('ui');
 }
-function pauseGame(){ if(G.mode!=='play') return; G.mode='paused'; sfx('setPaused', true); fastForward=false; showOverlay('pause'); }
+function pauseGame(){ if(G.mode!=='play') return; G.mode='paused'; sfx('setPaused', true); fastForward=false; buildPauseSound(); showOverlay('pause'); }
+function buildPauseSound(){
+  const box = document.getElementById('pauseSound'); if(!box) return; box.innerHTML = '';
+  for(const [key, label] of [['music','Music'],['sfx','Effects']]){
+    const r = document.createElement('div'); r.className = 'row';
+    const l = document.createElement('label'); l.htmlFor = 'p-'+key; l.textContent = label;
+    const w = document.createElement('div'); w.className = 'range';
+    const i = document.createElement('input'); i.type='range'; i.id='p-'+key; i.min=0; i.max=1; i.step=0.05; i.value=S[key];
+    const o = document.createElement('output'); o.textContent = Math.round(S[key]*100);
+    i.oninput = ()=>{ S[key] = +i.value; o.textContent = Math.round(S[key]*100); if(S.muted){ S.muted=false; } save('ld.settings',S); applyVolumes(); };
+    w.append(i,o); r.append(l,w); box.appendChild(r);
+  }
+}
+function applyVolumes(){ sfx('setMusicVolume', S.muted?0:S.music); sfx('setSfxVolume', S.muted?0:S.sfx); }
+function toggleMute(){ S.muted = !S.muted; save('ld.settings',S); applyVolumes(); if(G.mode==='play' && L) G.texts.push({x:W/2, y:H/2, s:S.muted?'Sound off':'Sound on', t:0, big:true, col:'#f4e7c8'}); }
 function resumeGame(){ G.mode='play'; sfx('setPaused', false); showOverlay(null); lastFrame = performance.now(); }
 function toTitle(){ G.mode='title'; sfx('stopFever'); music('stop'); sfx('setPaused', false); showOverlay('title'); }
 
@@ -1039,11 +1055,11 @@ function buildSettings(){
   row(g6, 'Music', null, range('music', 0, 1, 0.05, v=>Math.round(v*100)));
   row(g6, 'Effects', null, range('sfx', 0, 1, 0.05, v=>Math.round(v*100)));
 }
-function applyLive(key){ if(key==='music') sfx('setMusicVolume', S.music); if(key==='sfx'){ sfx('setSfxVolume', S.sfx); sfx('ui'); } }
+function applyLive(key){ if(key==='music'||key==='sfx'){ if(S.muted) S.muted=false; save('ld.settings',S); applyVolumes(); if(key==='sfx') sfx('ui'); } }
 
 /* ================= audio unlock ================= */
 let audioUnlocked = false;
-function unlockAudio(){ if(audioUnlocked) return; audioUnlocked = true; sfx('unlock'); sfx('setMusicVolume', S.music); sfx('setSfxVolume', S.sfx); if(G.mode==='play') music('start', G.levelIndex); }
+function unlockAudio(){ if(audioUnlocked) return; audioUnlocked = true; sfx('unlock'); applyVolumes(); if(G.mode==='play') music('start', G.levelIndex); }
 document.addEventListener('pointerdown', unlockAudio, {capture:true});
 document.addEventListener('visibilitychange', ()=>{ if(document.hidden && G.mode==='play') pauseGame(); });
 

@@ -42,14 +42,14 @@ Everything is adjustable from the title screen and saved in the browser:
 - Which powers are in the pool, power strength (×1–×3), a power to start each level with
 - Aim guide length, boat speed and size, gravity, game speed
 - Always-on Destiny, Ember or Moon Bridge
-- Music and effects volume
+- Music and effects volume (also in the pause menu)
 
 ## Controls
 
 | Input | Aim | Fire | Fast-forward | Pause |
 |---|---|---|---|---|
-| Controller | Left stick; right stick, bumpers or D-pad to fine-tune | A | Hold Y | Menu or B |
-| Keyboard | ← → (Shift to fine-tune) | Space or Enter | Hold F | Esc or P |
+| Controller | Left stick; right stick, bumpers or D-pad to fine-tune | A | Hold Y | Menu or B (X mutes) |
+| Keyboard | ← → (Shift to fine-tune) | Space or Enter | Hold F | Esc or P (M mutes) |
 | Mouse | Point | Left click | Hold right button | Pause button |
 | Touch | Drag | Lift finger (lift above the launcher to cancel) | Hold during a shot | Pause button |
 
