@@ -2,6 +2,8 @@
 
 An original peg-shooting game set at a night lantern festival by a river. Fire a moonstone from the launcher, light every amber lantern, and catch the stone in the drifting boat for a free ball.
 
+Play a five-chapter campaign, free play with your own rules, or a hot-seat match for 2 to 4 players.
+
 Everything runs in the browser from one HTML file: the art is drawn on a canvas and the music and sound effects are synthesized live with the Web Audio API. There are no image or audio files and no dependencies.
 
 **Play:** https://oldstarchy.github.io/lantern-drop/
@@ -33,7 +35,15 @@ Lighting more amber raises the multiplier (×2 at 40%, ×3 at 60%, ×5 at 76%, �
 | Moon Bridge | Immediate | The river bounces the ball back up once. |
 | Second Wind | Immediate | A ball that falls out drops back in from the top once. |
 
-## Rules & powers menu
+## Modes
+
+- **Campaign:** 5 chapters of 5 levels, classic rules (10 balls, 25 amber, 2 jade). Pick one unlocked power before each level. You start with Destiny Shot, Long Sight and Twin Moons, and each cleared chapter unlocks two more. Stars: clear the level, then finish with 3 and 6 balls to spare.
+- **Free play:** any level with the custom rules below.
+- **Hot-seat match:** 2 to 4 players alternate shots on one board, each with their own score, balls and powers. The match ends when the last amber lantern is lit or everyone is out of balls. Uses the free play rules.
+
+Destiny Shot pauses to search for the best nearby angle, then shows how much better it predicts that angle to be than yours ("+36% destiny discovered").
+
+## Free play rules
 
 Everything is adjustable from the title screen and saved in the browser:
 
@@ -60,7 +70,7 @@ Controllers work through the Gamepad API, including Edge on Xbox.
 ```
 src/shell.html   page markup and styles
 src/game.js      engine: physics, powers, rendering, input, menus
-src/levels.js    14 level layouts, generated deterministically
+src/levels.js    level layouts and campaign chapters, generated deterministically
 src/audio.js     synthesized sound effects and three music tracks
 test/            Node tests for levels and audio
 build.js         inlines everything into index.html
@@ -87,4 +97,4 @@ Edit files in `src/`, then rebuild and commit `index.html` along with your chang
 
 ### Level format
 
-`src/levels.js` sets `window.LANTERN_LEVELS` to an array of `{ name, hint, pegs }`. The board is 800 × 620 with the launcher at (400, 36). A peg is `{ x, y, shape: "round" }` or `{ x, y, shape: "brick", angle }`, with an optional `move` of type `circle` or `line`. The game assigns lantern colours when a level starts.
+`src/levels.js` sets `window.LANTERN_LEVELS` to an array of `{ name, hint, pegs }` and `window.LANTERN_CHAPTERS` to 5 chapters of `{ name, blurb, levels }`, where `levels` holds 5 indices into `LANTERN_LEVELS`. The board is 800 × 620 with the launcher at (400, 36). A peg is `{ x, y, shape: "round" }` or `{ x, y, shape: "brick", angle }`, with an optional `move` of type `circle` or `line`. The game assigns lantern colours when a level starts.

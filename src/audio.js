@@ -948,6 +948,221 @@
   }
 
   // ---------------------------------------------------------------------------
+  // Destiny (aim assist), turns, stars, campaign
+  // ---------------------------------------------------------------------------
+  function num(v, def) { v = +v; return isFinite(v) ? v : def; }
+
+  var think = { v: null, end: 0 };
+  function destinyThinkImpl(duration) {
+    var t = now();
+    stopDestinyThinkImpl();
+    var len = Math.max(0.15, Math.min(8, num(duration, 0.9)));
+    var end = t + len + 0.12;
+    var v = new Voice();
+    var out = v.output(G.sfxBus, 0, true);
+    // tremolo stage shared by everything in the voice
+    var trem = v.n(gainN(0.7));
+    var lfo = v.s(oscN('sine', 6, t), t, end);
+    lfo.frequency.linearRampToValueAtTime(11, t + len);
+    var lg = v.n(gainN(0.3));
+    chain(lfo, lg); lg.connect(trem.gain);
+    trem.connect(out);
+    // glassy rising pair (root + fifth), slightly detuned for shimmer
+    var r = mtof(pegRoot + 12);
+    var ratios = [1, 1.5, 2.003];
+    for (var i = 0; i < ratios.length; i++) {
+      var o = v.s(oscN(i === 1 ? 'triangle' : 'sine', r * ratios[i], t), t, end);
+      o.frequency.exponentialRampToValueAtTime(r * ratios[i] * 2, t + len);
+      var g = v.n(gainN(i === 2 ? 0.12 : 0.22));
+      chain(o, g, trem);
+    }
+    // airy whirr: bandpassed noise sweeping upward
+    var n = v.s(noiseSrc(), t, end, Math.random() * 1.8);
+    var bp = v.n(filt('bandpass', 900, 6));
+    bp.frequency.setValueAtTime(900, t);
+    bp.frequency.exponentialRampToValueAtTime(4200, t + len);
+    var ng = v.n(gainN(0.5));
+    chain(n, bp, ng, trem);
+    out.gain.setValueAtTime(0, t);
+    out.gain.linearRampToValueAtTime(0.16, t + Math.min(0.25, len * 0.4));
+    out.gain.linearRampToValueAtTime(0.22, t + len - 0.05);
+    out.gain.setTargetAtTime(0, t + len - 0.05, 0.03);
+    v.done();
+    think.v = v; think.end = end;
+  }
+  function stopDestinyThinkImpl() {
+    if (!ctx || !think.v) return;
+    var t = ctx.currentTime;
+    if (!think.v.freed && t < think.end) { think.v.kill(t); think.end = t + 0.05; }
+    think.v = null;
+  }
+
+  var FOUND_STACK = [0, 7, 12, 16, 19, 24, 28];
+  function destinyFoundImpl(pct) {
+    var t = now();
+    stopDestinyThinkImpl();
+    var p = Math.max(0, Math.min(150, num(pct, 0))) / 150;     // 0..1
+    var count = 1 + Math.round(p * 6);                           // 1..7 notes
+    var base = pegRoot + 12;
+    var gap = 0.06 - 0.02 * p;
+    for (var i = 0; i < count; i++) {
+      var last = i === count - 1;
+      fmBell(t + i * gap, mtof(base + FOUND_STACK[i]), {
+        ratio: 3.0, index: 0.6 + 1.2 * p, modTau: 0.06,
+        tau: last ? 0.35 + 0.35 * p : 0.22, len: last ? 2.2 : 1.2,
+        peak: (0.12 + 0.04 * p) * (count > 1 ? 0.85 : 1),
+        pan: count > 1 ? -0.4 + 0.8 * i / (count - 1) : 0,
+        extras: p > 0.5 ? [{ r: 2.004, g: 0.04, tau: 0.3 }] : null
+      });
+    }
+    if (p > 0.15) {
+      // sustained root+fifth underneath for the bigger finds
+      fmBell(t, mtof(base - 12), { ratio: 2, index: 0.4, tau: 0.5, len: 2.0, peak: 0.05 + 0.05 * p });
+      fmBell(t + 0.01, mtof(base - 5), { ratio: 2, index: 0.4, tau: 0.5, len: 2.0, peak: 0.04 + 0.04 * p });
+    }
+    if (p > 0.4) sparkle(t + count * gap, 1 + Math.round(p * 3), mtof(base + 24));
+  }
+
+  // Each player: [semitones above base], [beat offsets], timbre
+  var TURN_SIGS = [
+    { notes: [0, 4, 7], at: [0, 0.09, 0.18] },          // P1: bright rising triad
+    { notes: [7, 2, 9], at: [0, 0.09, 0.18] },          // P2: dip then leap
+    { notes: [12, 9, 14], at: [0, 0.12, 0.2] },         // P3: high, lilting
+    { notes: [-3, 4, 2], at: [0, 0.07, 0.2] }           // P4: low, playful turn
+  ];
+  function turnChangeImpl(playerIndex) {
+    var t = now();
+    var k = Math.floor(num(playerIndex, 0));
+    var sig = TURN_SIGS[((k % 4) + 4) % 4];
+    var base = pegRoot + 12;
+    for (var i = 0; i < sig.notes.length; i++) {
+      var tt = t + sig.at[i], m = base + sig.notes[i], last = i === sig.notes.length - 1;
+      kalimba(tt, m, 0, last ? 0.2 : 0.15, G.sfxBus, last ? 1.2 : 0.8);
+      fmBell(tt, mtof(m + 12), { ratio: 2, index: 0.5, tau: last ? 0.25 : 0.12, peak: 0.05, pan: -0.2 + 0.2 * i });
+    }
+  }
+
+  var STAR_STEPS = [0, 4, 7, 12, 16];
+  function starImpl(n) {
+    var t = now();
+    var k = Math.max(1, Math.min(5, Math.floor(num(n, 1))));
+    var m = pegRoot + 12 + STAR_STEPS[k - 1];
+    var bright = (k - 1) / 2;   // 0, .5, 1 for stars 1..3
+    // soft "stamp" body
+    var v = new Voice(), end = t + 0.25;
+    var out = v.output(G.sfxBus, 0, false);
+    var o = v.s(oscN('sine', mtof(m - 24), t), t, end);
+    o.frequency.setTargetAtTime(mtof(m - 24) * 0.7, t, 0.04);
+    o.connect(out);
+    envPerc(out.gain, t, 0.2, 0.002, 0.05, end);
+    v.done();
+    // bell
+    fmBell(t, mtof(m), {
+      ratio: 3.0, index: 0.9 + 0.7 * bright, tau: 0.35 + 0.1 * bright, len: 2.0, peak: 0.12 + 0.03 * bright,
+      pan: (k - 2) * 0.3,
+      extras: [{ r: 2.003, g: 0.03 + 0.03 * bright, tau: 0.3 }]
+    });
+    if (k >= 3) {
+      fmBell(t + 0.03, mtof(m - 5), { ratio: 2, index: 0.5, tau: 0.45, len: 2.0, peak: 0.07 });
+      fmBell(t + 0.06, mtof(m + 4), { ratio: 2, index: 0.5, tau: 0.45, len: 2.0, peak: 0.07 });
+    }
+    sparkle(t + 0.05, k, mtof(m + 12));
+  }
+
+  function powerUnlockedImpl() {
+    var t = now();
+    var base = pegRoot + 12;
+    // gathering riser
+    noiseHit(t, { type: 'bandpass', f: 400, f2: 6000, ftau: 0.25, q: 3, peak: 0.08, att: 0.5, tau: 0.06, len: 0.75, wet: true });
+    var rv = new Voice(), re = t + 0.62;
+    var ro = rv.output(G.sfxBus, 0, true);
+    var ros = rv.s(oscN('sine', mtof(base - 12), t), t, re);
+    ros.frequency.exponentialRampToValueAtTime(mtof(base), t + 0.55);
+    ros.connect(ro);
+    ro.gain.setValueAtTime(0, t);
+    ro.gain.linearRampToValueAtTime(0.08, t + 0.5);
+    ro.gain.setValueAtTime(0.08, t + 0.55);
+    ro.gain.setTargetAtTime(0, t + 0.55, 0.02);
+    rv.done();
+    // reveal: lydian-flavoured chord bloom with shared tremolo
+    var tr = t + 0.55, end = t + 1.6;
+    var v = new Voice();
+    var out = v.output(G.sfxBus, 0, true);
+    var trem = v.n(gainN(0.8));
+    var lfo = v.s(oscN('sine', 5.5, tr), tr, end), lg = v.n(gainN(0.2));
+    chain(lfo, lg); lg.connect(trem.gain);
+    trem.connect(out);
+    var chord = [0, 7, 11, 14, 18];
+    for (var i = 0; i < chord.length; i++) {
+      var o = v.s(oscN(i % 2 ? 'triangle' : 'sine', mtof(base + chord[i]), tr), tr, end);
+      var g = v.n(gainN(0.08));
+      chain(o, g, trem);
+    }
+    out.gain.setValueAtTime(0, tr);
+    out.gain.linearRampToValueAtTime(0.9, tr + 0.08);
+    out.gain.setValueAtTime(0.9, tr + 0.5);
+    out.gain.setTargetAtTime(0, tr + 0.5, 0.15);
+    v.done();
+    var arp = [12, 19, 23, 26, 30];
+    for (i = 0; i < arp.length; i++) fmBell(tr + i * 0.05, mtof(base + arp[i]), { ratio: 3, index: 0.9, tau: 0.25, peak: 0.07, pan: -0.5 + 0.25 * i });
+    sparkle(tr + 0.25, 4, mtof(base + 31));
+  }
+
+  // [eighth index, semitones, length in eighths]
+  var CHAPTER_MEL = [[0, 0, 1], [1, 4, 1], [2, 7, 1], [3, 12, 2], [5, 11, 1], [6, 9, 1], [7, 7, 2],
+                     [9, 9, 1], [10, 11, 1], [11, 14, 1], [12, 16, 6]];
+  var CHAPTER_CH = [[0, 0, 0], [3, 5, 0], [7, 2, 1], [9, 7, 0], [12, 0, 0]];   // [eighth, root semis, minor]
+  function chapterClearImpl() {
+    var t0 = now(), E = 0.13, base = pegRoot + 12, i, j;
+    for (i = 0; i < CHAPTER_MEL.length; i++) {
+      var e = CHAPTER_MEL[i], tt = t0 + e[0] * E, fin = i === CHAPTER_MEL.length - 1;
+      fmBell(tt, mtof(base + e[1]), { ratio: 3, index: 1.0, tau: fin ? 0.6 : 0.25, len: fin ? 2.4 : 1.0, peak: 0.1, pan: 0.15 });
+      brass(tt, base + e[1], e[2] * E * 0.9, fin ? 0.06 : 0.045, G.sfxBus);
+    }
+    for (i = 0; i < CHAPTER_CH.length; i++) {
+      var c = CHAPTER_CH[i], ct = t0 + c[0] * E, nxt = i + 1 < CHAPTER_CH.length ? CHAPTER_CH[i + 1][0] : 20;
+      var r = base - 12 + c[1];
+      var tri = [r, r + (c[2] ? 3 : 4), r + 7];
+      for (j = 0; j < 3; j++) { tri[j] = wrapInto(tri[j], 55, 69); kalimba(ct + j * 0.015, tri[j], 0, 0.06, G.sfxBus, 1.4); }
+      bass(ct, wrapInto(r, 36, 48), (nxt - c[0]) * E * 0.9, 0.22, G.sfxBus);
+    }
+    // percussion: soft kick on downbeats, roll into the final chord, crash
+    softKick(t0, 0.25, G.sfxBus); softKick(t0 + 4 * E, 0.2, G.sfxBus); softKick(t0 + 8 * E, 0.22, G.sfxBus);
+    for (i = 0; i < 6; i++) noiseHit(t0 + (10.5 + i * 0.25) * E, { f: 2000, q: 0.9, peak: 0.03 + i * 0.008, tau: 0.03, len: 0.1 });
+    var tf = t0 + 12 * E;
+    softKick(tf, 0.3, G.sfxBus);
+    noiseHit(tf, { type: 'highpass', f: 3400, q: 0.5, peak: 0.1, tau: 0.6, len: 2.2, wet: true });
+    pad(tf, [base - 12, base - 5, base, base + 4], 1.2, 0.05, G.sfxBus);
+    var fl = [19, 24, 28, 31];
+    for (i = 0; i < fl.length; i++) fmBell(tf + 0.12 + i * 0.07, mtof(base + fl[i]), { ratio: 2, index: 0.6, tau: 0.35, peak: 0.05, pan: -0.45 + 0.3 * i });
+    sparkle(tf + 0.4, 3, mtof(base + 31));
+  }
+
+  function matchEndImpl() {
+    var t0 = now(), base = pegRoot + 12, i;
+    // triplet pickup, two hits, then a held major-ninth chord
+    var mel = [[0, 4, 0.09], [0.08, 7, 0.09], [0.16, 9, 0.09], [0.26, 12, 0.18], [0.5, 9, 0.12], [0.66, 14, 0.9]];
+    for (i = 0; i < mel.length; i++) {
+      var tt = t0 + mel[i][0], fin = i === mel.length - 1;
+      brass(tt, base + mel[i][1], mel[i][2], fin ? 0.08 : 0.065, G.sfxBus);
+      fmBell(tt, mtof(base + 12 + mel[i][1]), { ratio: 2, index: 0.6, tau: fin ? 0.45 : 0.15, peak: 0.05 });
+    }
+    var tf = t0 + 0.66;
+    var chord = [base - 12, base - 5, base + 4, base + 7];
+    for (i = 0; i < chord.length; i++) brass(tf + i * 0.01, chord[i], 0.85, 0.035, G.sfxBus);
+    bass(t0 + 0.26, base - 24, 0.2, 0.2, G.sfxBus);
+    bass(tf, base - 24, 0.9, 0.25, G.sfxBus);
+    // claps/woodblocks on the hits, then a crash
+    woodblock(t0 + 0.26, 0.1, 900, G.sfxBus);
+    woodblock(t0 + 0.5, 0.1, 1070, G.sfxBus);
+    noiseHit(t0 + 0.26, { f: 1600, q: 1.2, peak: 0.08, tau: 0.03, len: 0.12 });
+    noiseHit(t0 + 0.5, { f: 1600, q: 1.2, peak: 0.08, tau: 0.03, len: 0.12 });
+    softKick(tf, 0.28, G.sfxBus);
+    noiseHit(tf, { type: 'highpass', f: 3400, q: 0.5, peak: 0.09, tau: 0.5, len: 1.5, wet: true });
+    sparkle(tf + 0.2, 3, mtof(base + 24));
+  }
+
+  // ---------------------------------------------------------------------------
   // Background music: lookahead sequencer ("two clocks")
   // ---------------------------------------------------------------------------
   var MAJOR = [0, 2, 4, 5, 7, 9, 11];
@@ -1226,6 +1441,14 @@
   api.fail = sfx(failImpl);
   api.ui = sfx(uiImpl);
   api.ballLost = sfx(ballLostImpl);
+  api.destinyThink = sfx(destinyThinkImpl);
+  api.stopDestinyThink = ctl(function () { if (ctx) stopDestinyThinkImpl(); });
+  api.destinyFound = sfx(destinyFoundImpl);
+  api.turnChange = sfx(turnChangeImpl);
+  api.star = sfx(starImpl);
+  api.powerUnlocked = sfx(powerUnlockedImpl);
+  api.chapterClear = sfx(chapterClearImpl);
+  api.matchEnd = sfx(matchEndImpl);
 
   api.music = {
     start: ctl(musicStartImpl),
@@ -1240,6 +1463,7 @@
     if (!ctx) return;
     if (on) {
       stopTensionImpl();
+      stopDestinyThinkImpl();
       if (ctx.suspend) { var p = ctx.suspend(); if (p && p.catch) p.catch(function () {}); }
     } else {
       if (ctx.resume) { var q = ctx.resume(); if (q && q.catch) q.catch(function () {}); }

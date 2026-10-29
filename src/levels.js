@@ -433,5 +433,210 @@
     levels.push(L.done());
   })();
 
+  // ======================= Expansion levels (indices 14+) =======================
+  // Indices 0-13 above must never change: saved best scores are keyed by index.
+
+  // 15 (index 14). Stepping-Stone Ford - rows of stones with gaps (easy)
+  (function () {
+    var L = new Builder("Stepping-Stone Ford", "Some stones are missing - aim for the gaps to drop straight through the ford.");
+    for (var row = 0; row < 6; row++) {
+      var y = 175 + row * 66, shift = (row % 2) * 15;
+      var pts = along(waveFn(45 + shift, 400, y, 8, 1.5, row), 0, 1, 31);
+      for (var i = 0; i < pts.length; i++) if ((i + 2 * row) % 6 < 4) L.round2(pts[i].x, pts[i].y);
+    }
+    // reed banks: short tilted bricks at the edges
+    for (var k = 0; k < 5; k++) L.brick2(60 + (k % 2) * 18, 205 + k * 66, Math.PI / 2 - 0.35);
+    L.bricks(along(waveFn(60, 740, 530, 6, 2, 0), 0, 1, 40));
+    levels.push(L.done());
+  })();
+
+  // 16 (index 15). Boat Moon - a crescent lying on its back, with stars (easy)
+  (function () {
+    var L = new Builder("Boat Moon", "The crescent cradles its lanterns - shots that roll along the rim find them.");
+    var ox = 400, oy = 330, R = 200, ix = 400, iy = 250, r = 175;
+    var outer = along(arcFn(ox, oy, R), 0, TAU - 1e-6, 34).filter(function (p) { return Math.hypot(p.x - ix, p.y - iy) > r + 12; });
+    var inner = along(arcFn(ix, iy, r), 0, TAU - 1e-6, 34).filter(function (p) { return Math.hypot(p.x - ox, p.y - oy) < R - 12; });
+    L.bricks(outer); L.bricks(inner);
+    L.rounds(jitterGrid(prng(1616), 160, 380, 640, 530, 30, 0, function (x, y) {
+      return Math.hypot(x - ox, y - oy) < R - 30 && Math.hypot(x - ix, y - iy) > r + 28;
+    }));
+    var rnd = prng(1617);
+    L.rounds(jitterGrid(rnd, 50, 130, 400, 540, 62, 14, function (x, y) {
+      return Math.hypot(x - ox, y - oy) > R + 30 || (Math.hypot(x - ix, y - iy) < r - 40 && y < 330);
+    }), true);
+    levels.push(L.done());
+  })();
+
+  // 17 (index 16). Teahouse Eaves - three tiers of upturned roofs
+  (function () {
+    var L = new Builder("Teahouse Eaves", "Upturned eaves flick the ball outward - land it on a ridge to slide inward.");
+    var tiers = [[175, 130], [285, 225], [400, 330]];
+    for (var i = 0; i < tiers.length; i++) {
+      var ty = tiers[i][0], w = tiers[i][1];
+      var roof = function (t) { var u = 2 * t - 1; return [400 + w * u, ty + 34 * u * u - 42 * Math.pow(u, 8)]; };
+      var pts = along(roof, 0, 1, 32, (2 * w * 1.02) % 32 / 2);
+      L.bricks(pts);
+      for (var k = 1; k < pts.length - 1; k += 2) L.round(pts[k].x, pts[k].y + 30);
+    }
+    // pillars and porch
+    for (var c = 0; c < 3; c++) L.bricks(linePts(150 + c * 50, 455, 150 + c * 50, 520, 32), true);
+    L.rounds(linePts(330, 470, 470, 470, 28));
+    L.rounds(linePts(45, 540, 755, 540, 30));
+    levels.push(L.done());
+  })();
+
+  // 18 (index 17). Falling Water - vertical brick columns with splash fans
+  (function () {
+    var L = new Builder("Falling Water", "Columns of falling water funnel the ball down - find a splash to break out sideways.");
+    var tops = [0, 60, 20, 90, 40, 110, 70];
+    for (var k = 0; k < 13; k++) {
+      var x = 70 + k * 55, d = Math.abs(k - 6), top = 150 + tops[d];
+      var n = 4, bottom = top + (n - 1) * 32;
+      for (var j = 0; j < n; j++) L.brick(x, top + j * 32, Math.PI / 2);
+      L.round(x - 14, bottom + 30); L.round(x + 14, bottom + 30); L.round(x, bottom + 56);
+    }
+    L.rounds(linePts(70 + 27.5, 530, 730 - 27.5, 530, 55));
+    L.rounds(linePts(70 + 27.5, 490, 730 - 27.5, 490, 110));
+    levels.push(L.done());
+  })();
+
+  // 19 (index 18). Nested Kites - concentric diamonds
+  (function () {
+    var L = new Builder("Nested Kites", "Kite frames nest inside each other - a steep shot slips between the struts.");
+    var cx = 400, cy = 330;
+    var sizes = [[320, 200, "brick", 36], [215, 134, "round", 30], [110, 68, "brick", 34]];
+    for (var s = 0; s < sizes.length; s++) {
+      var hx = sizes[s][0], hy = sizes[s][1];
+      var pts = along(polyFn([[cx, cy - hy], [cx + hx, cy], [cx, cy + hy], [cx - hx, cy], [cx, cy - hy]]), 0, 4 - 1e-9, sizes[s][3], 6);
+      if (sizes[s][2] === "brick") L.bricks(pts); else L.rounds(pts);
+    }
+    L.round(cx, cy); L.round(cx - 34, cy); L.round(cx + 34, cy);
+    // corner tails of the kites
+    for (var c = 0; c < 2; c++) {
+      var tail = along(waveFn(60, 230, 0, 12, 1.5, c * Math.PI), 0, 1, 28);
+      for (var i = 0; i < tail.length; i++) L.round2(tail[i].x, (c ? 515 : 145) + tail[i].y + (c ? -1 : 1) * i * 4);
+    }
+    levels.push(L.done());
+  })();
+
+  // 20 (index 19). Skyburst - firework rays with a spinning core (moving)
+  (function () {
+    var L = new Builder("Skyburst", "The firework's core never stops spinning - hit it and the sparks fly everywhere.");
+    var cx = 400, cy = 325;
+    L.spinRing(cx, cy, 32, 6, 1.1, 0);
+    for (var r = 0; r < 12; r++) {
+      var a = (TAU * r) / 12 + Math.PI / 12;
+      var pts = along(lineFn(cx + 66 * Math.cos(a), cy + 66 * Math.sin(a), cx + 200 * Math.cos(a), cy + 200 * Math.sin(a)), 0, 1, r % 2 ? 30 : 33);
+      if (r % 2) L.rounds(pts); else L.bricks(pts);
+    }
+    var minis = [[95, 175], [95, 470], [705, 175], [705, 470]];
+    for (var m = 0; m < minis.length; m++) {
+      L.round(minis[m][0], minis[m][1]);
+      L.rounds(ringPts(minis[m][0], minis[m][1], 34, 27, 0.3));
+    }
+    levels.push(L.done());
+  })();
+
+  // 21 (index 20). Wind Chimes - hanging chime clusters with swinging clappers (moving)
+  (function () {
+    var L = new Builder("Wind Chimes", "Clappers swing beneath the chimes - catch one mid-swing for a long ring.");
+    var clusters = [[170, 150], [400, 170], [630, 150]];
+    var lens = [2, 3, 4, 3, 2];
+    for (var c = 0; c < clusters.length; c++) {
+      var cx = clusters[c][0], top = clusters[c][1];
+      L.bricks(along(catenaryFn(cx - 80, cx + 80, top - 6, 12), 0, 1, 32, 16));
+      for (var k = 0; k < 5; k++)
+        for (var j = 0; j < lens[k]; j++) L.brick(cx - 64 + k * 32, top + 34 + j * 32, Math.PI / 2);
+      var cy = top + 34 + 3 * 32 + 44;
+      L.mover({ type: "line", ax: cx - 72, ay: cy, bx: cx + 72, by: cy, speed: 0.22, phase: c * 0.2 });
+      L.mover({ type: "line", ax: cx + 72, ay: cy + 30, bx: cx - 72, by: cy + 30, speed: 0.22, phase: c * 0.2 });
+    }
+    L.rounds(along(catenaryFn(45, 400, 410, 50), 0, 1, 30, 4), true);
+    L.rounds(along(catenaryFn(110, 400, 485, 40), 0, 1, 34, 10), true);
+    L.rounds(linePts(285, 230, 285, 330, 33), true);
+    levels.push(L.done());
+  })();
+
+  // 22 (index 21). Dragon Boat - asymmetric boat silhouette with rowing oars (moving)
+  (function () {
+    var L = new Builder("Dragon Boat", "The oars pull in time beneath the hull - the dragon's head guards the right.");
+    L.bricks(along(function (t) { return [140 + 520 * t, 400 + 80 * Math.sin(Math.PI * t)]; }, 0, 1, 32, 4));
+    L.bricks(along(polyFn([[672, 395], [705, 330], [718, 265], [702, 218], [660, 200]]), 0, 4, 32, 4));
+    L.bricks(along(polyFn([[128, 392], [100, 335], [92, 280], [112, 238], [152, 230]]), 0, 4, 32, 4));
+    L.round(680, 250); L.round(642, 222); L.round(628, 250); L.round(132, 268);
+    L.rounds(linePts(205, 395, 595, 395, 30));
+    L.rounds(linePts(220, 360, 580, 360, 40));
+    L.bricks(along(catenaryFn(50, 750, 140, 34), 0, 1, 33, 8));
+    L.rounds(jitterGrid(prng(2222), 200, 215, 600, 315, 58, 9));
+    for (var x = 220; x <= 580; x += 60)
+      L.mover({ type: "line", ax: x + 20, ay: 518, bx: x - 22, by: 530, speed: 0.3, phase: 0 });
+    levels.push(L.done());
+  })();
+
+  // 23 (index 22). Figure of Eight - two counter-rotating loops that share a crossing (moving)
+  (function () {
+    var L = new Builder("Figure of Eight", "Lanterns trade places at the crossing - fire through the waist as it clears.");
+    var R = 110, cy = 320, n = 12, w = 0.55;
+    for (var k = 0; k < n; k++) {
+      L.mover({ type: "circle", cx: 400 - R, cy: cy, r: R, speed: w, phase: (TAU * k) / n });
+      L.mover({ type: "circle", cx: 400 + R, cy: cy, r: R, speed: -w, phase: Math.PI + Math.PI / n + (TAU * k) / n });
+    }
+    for (var s = -1; s <= 1; s += 2) {
+      var c = 400 + s * R;
+      L.round(c, cy);
+      L.rounds(ringPts(c, cy, 55, 27));
+      var a0 = s < 0 ? 0.95 : -Math.PI + 0.95, a1 = s < 0 ? TAU - 0.95 : Math.PI - 0.95;
+      L.bricks(arcPts(c, cy, 160, a0, a1, 34));
+    }
+    L.rounds(linePts(330, 520, 470, 520, 35));
+    L.rounds(linePts(330, 130 + 20, 470, 150, 35));
+    levels.push(L.done());
+  })();
+
+  // 24 (index 23). Turning Tide - mirrored rows of sliders at staggered phases (moving)
+  (function () {
+    var L = new Builder("Turning Tide", "Each row of the tide arrives a beat after the last - wait for the gaps to line up.");
+    for (var row = 0; row < 6; row++) {
+      var y = 170 + row * 70, ph = (row * 0.13) % 1;
+      for (var i = 0; i < 3; i++) {
+        var ax = 45 + i * 28;
+        L.mover({ type: "line", ax: ax, ay: y, bx: ax + 270, by: y, speed: 0.12, phase: ph });
+        L.mover({ type: "line", ax: W - ax, ay: y, bx: W - ax - 270, by: y, speed: 0.12, phase: ph });
+      }
+    }
+    for (var s = 0; s < 5; s++) {
+      var sy = 205 + s * 70;
+      var pts = linePts(45 + (s % 2) * 25, sy, 395, sy, 50);
+      for (var j = 0; j < pts.length; j++) (j % 3 === 1) ? L.brick2(pts[j].x, sy, 0) : L.round2(pts[j].x, sy);
+    }
+    L.rounds(linePts(50, 540, 750, 540, 50));
+    levels.push(L.done());
+  })();
+
+  // 25 (index 24). Lantern Pendulums - three rods swinging in unison over a starfield (moving)
+  (function () {
+    var L = new Builder("Lantern Pendulums", "Three rods swing as one - the ball can ride a rod down if your timing is perfect.");
+    var th = 0.42, sp = 0.18;
+    var rods = [[400, 120, 100, 370], [160, 120, 70, 270], [640, 120, 70, 270]];
+    for (var p = 0; p < rods.length; p++)
+      for (var r = rods[p][2]; r <= rods[p][3]; r += 30) {
+        var px = rods[p][0], py = rods[p][1];
+        L.mover({ type: "line", ax: px - r * Math.sin(th), ay: py + r * Math.cos(th), bx: px + r * Math.sin(th), by: py + r * Math.cos(th), speed: sp, phase: 0 });
+      }
+    var rnd = prng(2525);
+    var pts = jitterGrid(rnd, 45, 130, 400, 540, 44, 6);
+    for (var i = 0; i < pts.length; i++) (i % 4 === 0) ? L.brick2(pts[i].x, pts[i].y, pts[i].a) : L.round2(pts[i].x, pts[i].y);
+    levels.push(L.done());
+  })();
+
   window.LANTERN_LEVELS = levels;
+
+  // Campaign chapters: 5 x 5 level indices, difficulty rising within and across chapters.
+  window.LANTERN_CHAPTERS = [
+    { name: "Lanterns on the Riverbank", blurb: "The first lanterns are lit along the quiet water's edge.", levels: [0, 14, 1, 15, 2] },
+    { name: "Downstream by Paper Light", blurb: "Follow the drifting lights past willows, ponds and teahouses.", levels: [3, 4, 16, 5, 17] },
+    { name: "The Bridges at Dusk", blurb: "Footbridges and whirlpools stand between you and the town.", levels: [6, 18, 7, 8, 9] },
+    { name: "Currents and Ferries", blurb: "The river comes alive with ferries, chimes and racing boats.", levels: [19, 10, 20, 11, 21] },
+    { name: "The Festival's Last Night", blurb: "Everything moves on the final night - only steady aim will do.", levels: [12, 22, 23, 24, 13] },
+  ];
 })();

@@ -8,8 +8,9 @@ function load() {
   globalThis.window = globalThis;
   delete require.cache[require.resolve(file)];
   delete globalThis.LANTERN_LEVELS;
+  delete globalThis.LANTERN_CHAPTERS;
   require(file);
-  return globalThis.LANTERN_LEVELS;
+  return { levels: globalThis.LANTERN_LEVELS, chapters: globalThis.LANTERN_CHAPTERS };
 }
 
 function movePos(m, t) {
@@ -26,11 +27,13 @@ const period = (m) => (m.type === "circle" ? (2 * Math.PI) / Math.abs(m.speed) :
 const num = (v) => typeof v === "number" && Number.isFinite(v);
 const EPS = 1e-6;
 
-const A = load();
-const B = load();
+const LA = load();
+const LB = load();
+assert.deepStrictEqual(LA.chapters, LB.chapters, "chapters not deterministic");
+const A = LA.levels, B = LB.levels, CH = LA.chapters;
 assert.deepStrictEqual(A, B, "levels not deterministic");
 assert.ok(Array.isArray(A), "LANTERN_LEVELS not an array");
-assert.strictEqual(A.length, 14, "expected 14 levels");
+assert.ok(A.length >= 25, "expected at least 25 levels");
 
 let failures = 0;
 const names = new Set();
@@ -106,6 +109,26 @@ A.forEach((L, li) => {
     console.log(`FAIL ${tag}: ${e.message}`);
   }
 });
+// chapters
+try {
+  assert.ok(Array.isArray(CH) && CH.length === 5, "expected exactly 5 chapters");
+  const used = new Set();
+  CH.forEach((c, ci) => {
+    assert.ok(typeof c.name === "string" && c.name.trim().length > 0, `chapter ${ci + 1} name`);
+    assert.ok(typeof c.blurb === "string" && c.blurb.trim().length > 0, `chapter ${ci + 1} blurb`);
+    assert.ok(Array.isArray(c.levels) && c.levels.length === 5, `chapter ${ci + 1} needs 5 levels`);
+    for (const idx of c.levels) {
+      assert.ok(Number.isInteger(idx) && idx >= 0 && idx < A.length, `chapter ${ci + 1} bad index ${idx}`);
+      assert.ok(!used.has(idx), `level index ${idx} used twice`);
+      used.add(idx);
+      if (ci === 0) assert.ok(!A[idx].pegs.some((p) => p.move), `chapter 1 level ${idx} has moving pegs`);
+    }
+    console.log(`ok  chapter ${ci + 1} "${c.name}": ${c.levels.map((i) => A[i].name).join(", ")}`);
+  });
+} catch (e) {
+  failures++;
+  console.log(`FAIL chapters: ${e.message}`);
+}
 const movingLevels = A.filter((L) => L.pegs.some((p) => p.move)).length;
 if (movingLevels < 4) { failures++; console.log(`FAIL only ${movingLevels} levels with moving pegs`); }
 if (failures) { console.log(`${failures} failure(s)`); process.exit(1); }

@@ -131,6 +131,12 @@ function callAll(rounds) {
     LA.tension(); LA.tension(); LA.stopTension(); LA.stopTension(); LA.tension();
     LA.feverStart(); LA.feverMusic(); LA.feverMusic(); LA.stopFever(); LA.stopFever(); LA.feverMusic();
     LA.levelClear(); LA.fail(); LA.ui(); LA.ballLost();
+    LA.destinyThink(); LA.destinyThink(0.5); LA.destinyThink(-1); LA.destinyThink(NaN); LA.destinyThink(1e9); LA.destinyThink('2');
+    LA.stopDestinyThink(); LA.stopDestinyThink(); LA.destinyThink(0.9);
+    for (const p of [0, 1, 50, 150, 300, 1e6, -20, NaN, undefined, null, 'x']) LA.destinyFound(p);
+    for (const i of [0, 1, 2, 3, 4, 7, -1, NaN, undefined, '2', 2.7]) LA.turnChange(i);
+    for (const n of [1, 2, 3, 0, 4, 99, -3, NaN, undefined, '2']) LA.star(n);
+    LA.powerUnlocked(); LA.powerUnlocked('extra'); LA.chapterClear(); LA.chapterClear(1); LA.matchEnd(); LA.matchEnd({});
     LA.setMusicVolume(0.3); LA.setMusicVolume(2); LA.setMusicVolume(-1); LA.setMusicVolume('x'); LA.setMusicVolume(NaN);
     LA.setSfxVolume(0.7); LA.setSfxVolume(undefined);
     LA.music.duck(true); LA.music.duck(false);
@@ -185,6 +191,22 @@ step('scheduler survives suspend (paused) and timer stalls', () => {
   ctx.currentTime += 3;
   advance(5, ctx);
   LA.music.duck(true); advance(1, ctx); LA.music.duck(false);
+});
+
+step('new feature sfx: destiny, turns, stars, campaign, match', () => {
+  const methods = ['destinyThink', 'stopDestinyThink', 'destinyFound', 'turnChange', 'star', 'powerUnlocked', 'chapterClear', 'matchEnd'];
+  for (const m of methods) assert.strictEqual(typeof LA[m], 'function', m + ' missing');
+  const v0 = LA._debug.activeVoices();
+  LA.destinyThink(1.2); advance(0.4, ctx); LA.stopDestinyThink(); advance(0.3, ctx);
+  LA.destinyThink(0.9); advance(1.5, ctx);                      // self-stops
+  LA.destinyThink(3); LA.destinyFound(150);                     // found cuts think
+  for (let p = 0; p <= 300; p += 25) LA.destinyFound(p);
+  for (let i = 0; i < 4; i++) LA.turnChange(i);
+  LA.star(1); advance(0.35, ctx); LA.star(2); advance(0.35, ctx); LA.star(3);
+  LA.powerUnlocked(); LA.chapterClear(); LA.matchEnd();
+  LA.setPaused(true); LA.destinyThink(); LA.star(1); LA.setPaused(false);
+  assert(LA._debug.activeVoices() > v0, 'expected new voices');
+  advance(6, ctx);
 });
 
 step('fever music plays out and auto-stops', () => {

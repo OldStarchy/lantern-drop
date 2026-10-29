@@ -185,10 +185,36 @@ let G = {       // game state
 function levels(){ return (window.LANTERN_LEVELS && window.LANTERN_LEVELS.length) ? window.LANTERN_LEVELS : FALLBACK_LEVELS; }
 const FALLBACK_LEVELS = [(function(){ const pegs=[]; for(let r=0;r<6;r++) for(let c=0;c<14;c++){ pegs.push({x:70+c*51+(r%2)*25, y:170+r*62, shape: (c+r)%4===0?'brick':'round', angle:0}); } return {name:'Practice Pond', hint:'Aim for the middle.', pegs}; })()];
 
-function startLevel(i){
+/* ================= modes, rules, players ================= */
+// MATCH describes what is being played:
+//   {mode:'free'}                                   custom rules from the Rules & powers menu
+//   {mode:'campaign', chapter, slot, power}         classic rules, one chosen power
+//   {mode:'versus', players:[names]}                hot-seat, custom rules, shared board
+let MATCH = {mode:'free'};
+let R = S;                                   // rules in force for the current level
+const PLAYER_COLORS = ['#f2a93b','#6fc3ff','#5fe09a','#ee8cf4'];
+G.players = [{name:'You', color:PLAYER_COLORS[0], score:0, balls:10, charges:{}, shots:0}];
+G.cur = 0;
+const PL = () => G.players[G.cur];
+function rulesFor(m){
+  if(m.mode==='campaign'){
+    return Object.assign({}, S, {
+      balls:CLASSIC.balls, infinite:false, targets:CLASSIC.targets, greens:CLASSIC.greens, purple:true,
+      pool:[m.power], strength:1, startPower:'none', scoreBalls:true,
+      cheatDestiny:false, cheatFlame:false, cheatBridge:false
+    });
+  }
+  return S;
+}
+function isVersus(){ return MATCH.mode==='versus'; }
+
+function startLevel(i, match){
+  if(match) MATCH = match;
+  R = rulesFor(MATCH);
   const LV = levels();
   i = ((i % LV.length) + LV.length) % LV.length;
-  G.levelIndex = i; progress.last = i; save('ld.progress', progress);
+  G.levelIndex = i;
+  if(MATCH.mode==='free'){ progress.last = i; save('ld.progress', progress); }
   const def = LV[i];
   const pegs = def.pegs.map(p => ({
     x:p.x, y:p.y, x0:p.x, y0:p.y, shape:p.shape==='brick'?'brick':'round', angle:p.angle||0,
@@ -197,19 +223,28 @@ function startLevel(i){
   }));
   // assign colours
   const idx = pegs.map((_,k)=>k); shuffle(idx);
-  const nT = Math.min(S.targets, Math.max(1, pegs.length-1));
-  const nG = Math.min(S.greens, Math.max(0, pegs.length - nT));
+  const nT = Math.min(R.targets, Math.max(1, pegs.length-1));
+  const nG = Math.min(R.greens, Math.max(0, pegs.length - nT));
   for(let k=0;k<nT;k++) pegs[idx[k]].type='orange';
   for(let k=nT;k<nT+nG;k++) pegs[idx[k]].type='green';
   L = { def, pegs, totalOrange:nT, name:def.name, hint:def.hint||'' };
-  G.score = 0; G.balls = S.balls; G.state='aim'; G.t = 0; G.aim = Math.PI/2;
-  G.ballsArr=[]; G.fx=[]; G.texts=[]; G.fever=false; G.feverPhase=0; G.slow=1; G.tension=0;
-  G.charges = {}; G.thresholdsHit=0; G.purpleIdx=-1; G.totalShots=0; G.pendingResult=null; G.finaleCaught=false;
-  G.lastMulti = 1;
-  if(S.startPower && S.startPower!=='none' && PMAP[S.startPower] && PMAP[S.startPower].kind==='charge') addCharge(S.startPower);
+  const names = isVersus() ? MATCH.players : ['You'];
+  G.players = names.map((n,k)=>({name:n, color:PLAYER_COLORS[k%4], score:0, balls:R.balls, charges:{}, shots:0}));
+  G.cur = 0;
+  G.state='aim'; G.t = 0; G.aim = Math.PI/2; G.acc = 0;
+  G.ballsArr=[]; G.fx=[]; G.texts=[]; G.fever=false; G.feverPhase=0; G.slow=1; G.slowHold=0; G.tension=0;
+  G.thresholdsHit=0; G.purpleIdx=-1; G.totalShots=0; G.pendingResult=null; G.finaleCaught=false;
+  G.lastMulti = 1; G.destiny = null; gameTimers = [];
+  if(R.startPower && R.startPower!=='none' && PMAP[R.startPower] && PMAP[R.startPower].kind==='charge'){
+    for(let k=0;k<G.players.length;k++){ G.cur = k; addCharge(R.startPower); }
+    G.cur = 0;
+  }
   updatePegPositions(0);
   assignPurple();
-  G.banner = {text:def.name, sub:L.hint, t:0, dur:2.8};
+  let sub = L.hint;
+  if(MATCH.mode==='campaign'){ const ch = chapters()[MATCH.chapter]; sub = `${ch.name} · ${MATCH.slot+1} of 5 · Power: ${PMAP[MATCH.power].name}`; }
+  if(isVersus()) sub = `${PL().name} shoots first`;
+  G.banner = {text:def.name, sub, t:0, dur:2.8};
   G.mode = 'play';
   music('start', i);
   applyVolumes();
@@ -224,7 +259,7 @@ function multiplier(){ const f = orangeHitFrac(); return f>=.88?10 : f>=.76?5 : 
 function assignPurple(){
   if(G.purpleIdx>=0){ const p = L.pegs[G.purpleIdx]; if(p && p.type==='purple' && !p.hit && !p.removed) p.type='blue'; }
   G.purpleIdx = -1;
-  if(!S.purple) return;
+  if(!R.purple) return;
   const cand = []; L.pegs.forEach((p,k)=>{ if(p.type==='blue' && !p.removed && !p.hit) cand.push(k); });
   if(!cand.length) return;
   G.purpleIdx = cand[Math.random()*cand.length|0];
@@ -243,7 +278,7 @@ function updatePegPositions(t){
 }
 
 /* ================= boat ================= */
-function boatHalf(){ let h = BOAT_SZ[S.boatSize]||52; if((G.charges.wide||0)>0) h*=2; return Math.min(h, 330); }
+function boatHalf(){ let h = BOAT_SZ[S.boatSize]||52; if((PL().charges.wide||0)>0) h*=2; return Math.min(h, 330); }
 function boatX(t){ const hw = boatHalf(); const amp = W/2 - hw - 14; return W/2 + amp*Math.sin(t*(BOAT_SPD[S.boatSpeed]??.6)); }
 const POTS = [{v:10000},{v:50000},{v:100000},{v:50000},{v:10000}];
 const POT_W = W/5;
@@ -305,10 +340,10 @@ function launchVec(a){ return {x: LX + Math.cos(a)*30, y: LY + Math.sin(a)*30, v
 /* --- prediction (Destiny + Long Sight) --- */
 function shotFlags(){
   return {
-    flame: S.cheatFlame || (G.charges.flame||0)>0,
-    magnet:(G.charges.magnet||0)>0,
-    float: (G.charges.float||0)>0,
-    bridge: S.cheatBridge ? 1 : 0,
+    flame: R.cheatFlame || (PL().charges.flame||0)>0,
+    magnet:(PL().charges.magnet||0)>0,
+    float: (PL().charges.float||0)>0,
+    bridge: R.cheatBridge ? 1 : 0,
   };
 }
 function gravityFor(fl){ return (GRAV[S.gravity]||420) * (fl.float ? .55 : 1); }
@@ -346,42 +381,88 @@ function makeShadow(){
   sh.movers = []; sh.forEach((p,i)=>{ if(p.move) sh.movers.push(i); });
   return sh;
 }
-function destinyAngle(base){
+// Searches angles around the player's aim and returns the best one, plus the
+// predicted value of the original aim and of the chosen one (for the "% discovered" text).
+function destinySearch(base){
   const fl = shotFlags();
   const shadow = makeShadow();
-  let best = base, bs = -1;
   const span = 0.24, N = 48;
-  const cands = [base];
-  for(let k=1;k<=N/2;k++){ cands.push(base + span*k/(N/2), base - span*k/(N/2)); }
-  for(const a of cands){
-    if(a<A_MIN||a>A_MAX) continue;
-    const r = simulate(a, fl, {maxSteps:2000, shadow});
-    const sc = r.score - Math.abs(a-base)*20;
-    if(sc > bs){ bs = sc; best = a; }
+  const baseScore = simulate(base, fl, {maxSteps:2000, shadow}).score;
+  let best = base, bs = baseScore, bestRaw = baseScore;
+  const tried = [];
+  for(let k=1;k<=N/2;k++){
+    for(const a of [base + span*k/(N/2), base - span*k/(N/2)]){
+      if(a<A_MIN||a>A_MAX) continue;
+      const raw = simulate(a, fl, {maxSteps:2000, shadow}).score;
+      tried.push(a);
+      const sc = raw - Math.abs(a-base)*20;   // prefer staying close to the player's aim
+      if(sc > bs){ bs = sc; best = a; bestRaw = raw; }
+    }
   }
-  return best;
+  return {angle:best, baseScore, bestScore:bestRaw, tried};
 }
+function destinyAngle(base){ return destinySearch(base).angle; }
 
 /* ================= shooting ================= */
-function canFire(){ return G.mode==='play' && G.state==='aim' && !G.banner?.block && (S.infinite || G.balls>0); }
+function canFire(){ return G.mode==='play' && G.state==='aim' && !G.banner?.block && (R.infinite || PL().balls>0); }
 function fire(){
   if(!canFire()) return;
-  let a = G.aim;
   G.flags = shotFlags();
-  let destinyUsed = false;
-  if(S.cheatDestiny || (G.charges.destiny||0)>0){
-    a = destinyAngle(a); destinyUsed = true;
-    if(!S.cheatDestiny) useCharge('destiny');
-    G.fx.push({k:'beam', a, t:0, dur:.6});
-    sfx('powerReady','destiny');
-    G.aim = a;
+  if(R.cheatDestiny || (PL().charges.destiny||0)>0){
+    if(!R.cheatDestiny) useCharge('destiny');
+    startDestiny();
+    return;
   }
-  if((G.charges.flame||0)>0) useCharge('flame');
-  if((G.charges.magnet||0)>0) useCharge('magnet');
-  if((G.charges.float||0)>0) useCharge('float');
-  if((G.charges.foresight||0)>0) useCharge('foresight');
-  if(!S.infinite) G.balls--;
-  G.totalShots++;
+  launch(G.aim);
+}
+// Destiny: the launcher visibly "thinks" (sweeps through candidate angles), snaps to the
+// best one, shows how much better it is than the player's aim, then fires.
+function startDestiny(){
+  const base = G.aim;
+  const r = destinySearch(base);
+  let pct;
+  if(r.bestScore <= r.baseScore) pct = 0;
+  else if(r.baseScore <= 0) pct = Infinity;
+  else pct = Math.round((r.bestScore - r.baseScore) / r.baseScore * 100);
+  const dur = R.cheatDestiny ? 0.55 : 0.95;
+  G.destiny = {t:0, dur, from:base, to:r.angle, pct, seed:Math.random()*6.28};
+  G.state = 'destiny';
+  sfx('destinyThink', dur);
+}
+function updateDestiny(dt){
+  const d = G.destiny; if(!d) return;
+  d.t += dt;
+  const u = Math.min(1, d.t / d.dur);
+  if(u < 0.7){
+    // searching sweep: widening then narrowing wobble around the player's aim
+    const env = Math.sin(u/0.7*Math.PI);
+    G.aim = clampAim(d.from + Math.sin(d.t*17 + d.seed)*0.2*env + Math.sin(d.t*7.3)*0.06*env);
+  } else {
+    const k = (u-0.7)/0.3; const e = 1-(1-k)*(1-k);
+    G.aim = clampAim(G.aim + (d.to - G.aim)*Math.min(1, e*0.9 + 0.1));
+  }
+  if(u >= 1){
+    G.aim = d.to;
+    sfx('stopDestinyThink');
+    sfx('destinyFound', Number.isFinite(d.pct) ? d.pct : 300);
+    const tipX = LX + Math.cos(d.to)*40, tipY = LY + Math.sin(d.to)*40;
+    const label = d.pct===0 ? 'Aim already true' : (Number.isFinite(d.pct) ? `+${d.pct}%` : '+∞%') + ' destiny discovered';
+    G.texts.push({x:Math.max(140, Math.min(W-140, tipX)), y:tipY+26, s:label, t:0, big:true, destiny:true, col: d.pct===0 ? '#f4e7c8' : '#ffe08a'});
+    G.fx.push({k:'beam', a:d.to, t:0, dur:.7});
+    G.fx.push({k:'ring', x:LX, y:LY, t:0, dur:.6, col:'rgba(255,220,120,'});
+    G.destiny = null;
+    launch(d.to);
+  }
+}
+function clampAim(a){ return Math.max(A_MIN, Math.min(A_MAX, a)); }
+function launch(a){
+  G.aim = a;
+  if((PL().charges.flame||0)>0) useCharge('flame');
+  if((PL().charges.magnet||0)>0) useCharge('magnet');
+  if((PL().charges.float||0)>0) useCharge('float');
+  if((PL().charges.foresight||0)>0) useCharge('foresight');
+  if(!R.infinite) PL().balls--;
+  G.totalShots++; PL().shots++;
   const v = launchVec(a);
   G.ballsArr = [mkBall(v)];
   G.state = 'fly'; G.shotScore = 0; G.hitCount = 0; G.freeBallThisShot = false; G.stuck = 0;
@@ -391,8 +472,8 @@ function fire(){
   if(G.flags.flame) sfx('fire');
 }
 function mkBall(v){ return {x:v.x,y:v.y,vx:v.vx,vy:v.vy, trail:[], touching:-1, stuckT:0, alive:true, caught:false, lastX:v.x, lastY:v.y}; }
-function addCharge(id){ const P = PMAP[id]; G.charges[id] = (G.charges[id]||0) + P.base*S.strength; }
-function useCharge(id){ G.charges[id] = Math.max(0,(G.charges[id]||0)-1); }
+function addCharge(id){ const P = PMAP[id]; PL().charges[id] = (PL().charges[id]||0) + P.base*R.strength; }
+function useCharge(id){ PL().charges[id] = Math.max(0,(PL().charges[id]||0)-1); }
 
 /* ================= hits & powers ================= */
 function onPegHit(i, ball){
@@ -417,10 +498,10 @@ function lightPeg(i, ball, quiet){
   if(p.type==='orange' && orangeLeft()===0 && !G.fever) startFever(p);
 }
 function addScore(pts){
-  const before = G.score; G.score += pts;
+  const before = PL().score; PL().score += pts;
 }
 function pickPower(){
-  const pool = S.pool.filter(id=>PMAP[id]);
+  const pool = R.pool.filter(id=>PMAP[id]);
   if(!pool.length) return null;
   return pool[Math.random()*pool.length|0];
 }
@@ -430,7 +511,7 @@ function triggerPower(p, ball){
   G.banner = {text:P.name, sub:P.desc, t:0, dur:1.8, power:true};
   sfx('powerReady', id);
   G.fx.push({k:'ring', x:p.x, y:p.y, t:0, dur:.7, col:'rgba(120,255,180,'});
-  const s = S.strength;
+  const s = R.strength;
   switch(id){
     case 'multiball': {
       for(let k=0;k<s;k++){ const b = ball || G.ballsArr[0]; const nb = mkBall({x:p.x, y:p.y-18, vx: -(b?b.vx:0) + (k%2?60:-60)*(k+1), vy: -Math.abs(b?b.vy:200)*.6 - 80}); G.ballsArr.push(nb); }
@@ -486,6 +567,7 @@ function update(realDt){
   if(G.slowHold>0){ G.slowHold -= realDt; if(G.slowHold<=0) G.slow = 1; }
   else if(G.slow < 1) G.slow = Math.min(1, G.slow + realDt*1.5);
   ts *= G.slow;
+  if(G.state==='destiny') updateDestiny(realDt * S.speed);
   G.acc = (G.acc||0) + realDt*ts;
   let steps = 0;
   while(G.acc >= DT && steps < 240){ G.acc -= DT; steps++; fixedStep(); }
@@ -493,8 +575,8 @@ function update(realDt){
   const fdt = realDt * Math.max(.35, G.slow);
   for(const f of G.fx){ f.t += fdt; if(f.k==='spark'){ f.x+=f.vx*fdt; f.y+=f.vy*fdt; f.vy+=300*fdt; } }
   G.fx = G.fx.filter(f=>f.t<f.dur);
-  for(const t of G.texts){ t.t += realDt; t.y -= (t.big?14:28)*realDt; }
-  G.texts = G.texts.filter(t=>t.t < (t.big?1.6:1.0));
+  for(const t of G.texts){ t.t += realDt; t.y -= (t.destiny?24:t.big?14:28)*realDt; }
+  G.texts = G.texts.filter(t=>t.t < textLife(t));
   if(G.shake>0) G.shake = Math.max(0, G.shake - realDt);
   if(G.recoil>0) G.recoil = Math.max(0, G.recoil - realDt*4);
   for(const p of L.pegs){ if(p.flash>0) p.flash = Math.max(0, p.flash - realDt*3); }
@@ -513,6 +595,7 @@ function update(realDt){
     G.finaleT -= realDt; if(G.finaleT<=0) finishLevel(true);
   }
 }
+function textLife(t){ return t.destiny ? 2.4 : t.big ? 1.6 : 1.0; }
 function fixedStep(){
   G.t += DT;
   updatePegPositions(G.t);
@@ -556,7 +639,7 @@ function fixedStep(){
       if(b.y > BOAT_Y + 2 && !b.caught){ const k = Math.max(0, Math.min(4, (b.x/POT_W)|0)); b.caught = true; b.alive = false; finaleCatch(k); }
     } else if(b.y > BOAT_Y-4 && b.vy>0 && !b.caught){
       const bx = boatX(G.t), hw = boatHalf();
-      if(Math.abs(b.x-bx) < hw-4){ b.caught = true; b.alive = false; if(!G.freeBallThisShot){ G.freeBallThisShot = true; if(!S.infinite) G.balls++; G.texts.push({x:bx, y:BOAT_Y-30, s:'Free ball', t:0, col:'#c8ffe0', big:true}); sfx('bucket'); } }
+      if(Math.abs(b.x-bx) < hw-4){ b.caught = true; b.alive = false; if(!G.freeBallThisShot){ G.freeBallThisShot = true; if(!R.infinite) PL().balls++; G.texts.push({x:bx, y:BOAT_Y-30, s:'Free ball', t:0, col:'#c8ffe0', big:true}); sfx('bucket'); } }
     }
     if(b.alive && b.y > H + 20){
       if((G.bridges||0)>0){ G.bridges--; b.y = H-2; b.vy = -Math.abs(b.vy)*.95 - 120; G.fx.push({k:'ring',x:b.x,y:H-6,t:0,dur:.6,col:'rgba(255,240,200,'}); sfx('powerReady','bridge'); }
@@ -571,10 +654,10 @@ function endShot(){
   G.ballsArr = []; G.tensionOn = false; sfx('stopTension');
   if(G.fever){ return; } // finaleCatch handles it
   // score-based extra balls
-  if(S.scoreBalls){
+  if(R.scoreBalls){
     const th = [25000, 75000, 125000];
     let gained = 0; for(const v of th) if(G.shotScore >= v) gained++;
-    if(gained){ if(!S.infinite) G.balls += gained; G.texts.push({x:W/2, y:H/2, s: gained>1 ? `+${gained} balls` : '+1 ball', t:0, big:true, col:'#c8ffe0'}); sfx('extraBall'); }
+    if(gained){ if(!R.infinite) PL().balls += gained; G.texts.push({x:W/2, y:H/2, s: gained>1 ? `+${gained} balls` : '+1 ball', t:0, big:true, col:'#c8ffe0'}); sfx('extraBall'); }
   }
   // queue clearing by hit order
   const q = []; L.pegs.forEach((p,k)=>{ if(p.hit && !p.removed) q.push(k); });
@@ -583,9 +666,24 @@ function endShot(){
   if(G.shotScore>0) G.texts.push({x:W/2, y:96, s:G.shotScore.toLocaleString(), t:0, big:true, col:'#f4e7c8'});
 }
 function endTurn(){
-  if((G.charges.wide||0)>0) useCharge('wide');
+  if((PL().charges.wide||0)>0) useCharge('wide');
   if(orangeLeft()===0){ finishLevel(true); return; }
-  if(!S.infinite && G.balls<=0){ finishLevel(false); return; }
+  if(isVersus()){
+    const n = G.players.length;
+    PL().aim = G.aim;
+    for(let k=1;k<=n;k++){
+      const j = (G.cur+k)%n;
+      if(R.infinite || G.players[j].balls>0){ G.cur = j; break; }
+      if(k===n){ finishLevel(false); return; }
+    }
+    if(!R.infinite && PL().balls<=0){ finishLevel(false); return; }
+    assignPurple();
+    G.aim = PL().aim ?? Math.PI/2;
+    G.state = 'aim';
+    if(n>1){ G.banner = {text:`${PL().name}'s turn`, sub:`${PL().score.toLocaleString()} points · ${R.infinite?'∞':PL().balls} balls`, t:0, dur:1.4, color:PL().color}; sfx('turnChange', G.cur); }
+    return;
+  }
+  if(!R.infinite && PL().balls<=0){ finishLevel(false); return; }
   assignPurple();
   G.state = 'aim';
 }
@@ -600,18 +698,67 @@ function finaleCatch(k){
 function finishLevel(won){
   G.state = 'done';
   sfx('stopFever'); music('duck', false);
-  let bonus = 0;
-  if(won && !S.infinite){ bonus = G.balls*10000; G.score += bonus; }
-  const key = String(G.levelIndex);
-  if(won){ progress.cleared[key] = true; if(!progress.best[key] || G.score > progress.best[key]) progress.best[key] = G.score; save('ld.progress', progress); }
+  const res = {won, bonus:0, spare:PL().balls, stars:0, newStars:0, unlocked:[], chapterCleared:false};
+  if(isVersus()){
+    if(won) G.finisher = G.cur;
+    setTimeout(()=>showVersusResult(res), 700);
+    return;
+  }
+  if(won && !R.infinite){ res.bonus = PL().balls*10000; PL().score += res.bonus; }
+  if(MATCH.mode==='campaign'){
+    if(won) campaignRecord(res);
+  } else {
+    const key = String(G.levelIndex);
+    if(won){ progress.cleared[key] = true; if(!progress.best[key] || PL().score > progress.best[key]) progress.best[key] = PL().score; save('ld.progress', progress); }
+  }
   if(!won) sfx('fail');
-  setTimeout(()=>showResult(won, bonus), won?400:700);
+  setTimeout(()=>showResult(res), won?400:700);
+}
+
+/* ================= campaign ================= */
+const POWER_UNLOCKS = [['destiny','foresight','multiball'], ['blast','spark'], ['flame','magnet'], ['float','wide'], ['bridge','secondwind']];
+const STAR_SPARE = [3, 6];   // balls to spare for the 2nd and 3rd star
+function chapters(){
+  if(Array.isArray(window.LANTERN_CHAPTERS) && window.LANTERN_CHAPTERS.length) return window.LANTERN_CHAPTERS;
+  const LV = levels(), out = [];
+  for(let c=0;c<5;c++){ const lv=[]; for(let k=0;k<5;k++){ const i=c*5+k; if(i<LV.length) lv.push(i); } if(lv.length) out.push({name:`Chapter ${c+1}`, blurb:'', levels:lv}); }
+  return out;
+}
+function camp(){ if(!progress.camp) progress.camp = {stars:{}, best:{}, lastPower:'destiny'}; return progress.camp; }
+function levelStars(i){ return camp().stars[i] || 0; }
+function chapterCleared(c){ const ch = chapters()[c]; return !!ch && ch.levels.every(i=>levelStars(i)>0); }
+function chapterOpen(c){ return c===0 || chapterCleared(c-1); }
+function slotOpen(c, k){ return chapterOpen(c) && (k===0 || levelStars(chapters()[c].levels[k-1])>0); }
+function unlockedPowers(){
+  const out = POWER_UNLOCKS[0].slice();
+  for(let c=0;c<chapters().length && c+1<POWER_UNLOCKS.length;c++) if(chapterCleared(c)) out.push(...POWER_UNLOCKS[c+1]);
+  return out;
+}
+function unlockChapterFor(id){ for(let c=0;c<POWER_UNLOCKS.length;c++) if(POWER_UNLOCKS[c].includes(id)) return c; return 0; }
+function campaignRecord(res){
+  const C = camp(), i = G.levelIndex;
+  const before = unlockedPowers();
+  const wasCleared = chapterCleared(MATCH.chapter);
+  let stars = 1; if(res.spare >= STAR_SPARE[0]) stars = 2; if(res.spare >= STAR_SPARE[1]) stars = 3;
+  res.stars = stars; res.newStars = Math.max(0, stars - (C.stars[i]||0));
+  C.stars[i] = Math.max(C.stars[i]||0, stars);
+  if(!C.best[i] || PL().score > C.best[i]) C.best[i] = PL().score;
+  progress.cleared[i] = true;
+  save('ld.progress', progress);
+  res.chapterCleared = !wasCleared && chapterCleared(MATCH.chapter);
+  res.unlocked = unlockedPowers().filter(id=>!before.includes(id));
+}
+function nextCampaignSlot(){
+  const chs = chapters(); let c = MATCH.chapter, k = MATCH.slot + 1;
+  if(k >= chs[c].levels.length){ c++; k = 0; }
+  if(c >= chs.length || !slotOpen(c,k)) return null;
+  return {chapter:c, slot:k};
 }
 
 /* ================= aim guide ================= */
 function computeGuide(){
-  const full = S.guide==='full' || (G.charges.foresight||0)>0;
-  const key = G.aim.toFixed(4)+'|'+full+'|'+S.guide+'|'+(G.t*4|0)*(L.pegs.some(p=>p.move)?1:0)+'|'+L.pegs.filter(p=>p.removed).length+'|'+JSON.stringify(G.charges)+S.gravity+S.boatSize;
+  const full = S.guide==='full' || (PL().charges.foresight||0)>0;
+  const key = G.aim.toFixed(4)+'|'+full+'|'+S.guide+'|'+(G.t*4|0)*(L.pegs.some(p=>p.move)?1:0)+'|'+L.pegs.filter(p=>p.removed).length+'|'+JSON.stringify(PL().charges)+S.gravity+S.boatSize;
   if(key===G.guideKey) return G.guide;
   G.guideKey = key;
   const fl = shotFlags();
@@ -703,11 +850,12 @@ function drawGame(g, tt){
   // texts
   g.textAlign = 'center'; g.textBaseline = 'middle';
   for(const t of G.texts){
-    const life = t.big?1.6:1.0; const a = Math.min(1, (life - t.t)*3);
+    const life = textLife(t); const a = Math.min(1, (life - t.t)*3, t.t*8);
     g.globalAlpha = Math.max(0,a);
-    g.font = t.big ? '800 26px "M PLUS Rounded 1c", sans-serif' : '800 15px "M PLUS Rounded 1c", sans-serif';
+    g.font = t.destiny ? '800 24px "Shippori Mincho B1", serif' : t.big ? '800 26px "M PLUS Rounded 1c", sans-serif' : '800 15px "M PLUS Rounded 1c", sans-serif';
+    if(t.destiny){ g.shadowColor = 'rgba(255,200,90,.9)'; g.shadowBlur = 14; }
     g.lineWidth = 4; g.strokeStyle = 'rgba(8,12,32,.85)'; g.strokeText(t.s, t.x, t.y);
-    g.fillStyle = t.col; g.fillText(t.s, t.x, t.y);
+    g.fillStyle = t.col; g.fillText(t.s, t.x, t.y); g.shadowBlur = 0;
   }
   g.globalAlpha = 1;
   // banner
@@ -717,7 +865,7 @@ function drawGame(g, tt){
     const y = b.finale ? H*.38 : b.power ? H*.42 : H*.4;
     g.fillStyle = 'rgba(8,12,32,.6)'; g.fillRect(0, y-44, W, b.sub?86:64);
     g.font = `800 ${b.finale?50:38}px "Shippori Mincho B1", serif`;
-    g.fillStyle = b.power ? '#c8ffe0' : '#ffe3a0'; g.shadowColor = b.power?'rgba(90,255,160,.8)':'rgba(255,170,60,.8)'; g.shadowBlur = 18;
+    g.fillStyle = b.color || (b.power ? '#c8ffe0' : '#ffe3a0'); g.shadowColor = b.power?'rgba(90,255,160,.8)':'rgba(255,170,60,.8)'; g.shadowBlur = 18;
     g.fillText(b.text, W/2, y-8); g.shadowBlur = 0;
     if(b.sub){ g.font = '500 15px "M PLUS Rounded 1c", sans-serif'; g.fillStyle = '#f4e7c8'; g.fillText(b.sub, W/2, y+26); }
     g.globalAlpha = 1;
@@ -753,7 +901,15 @@ function drawLauncher(g, tt){
   g.save(); g.translate(LX, LY);
   const gl = g.createRadialGradient(0,0,4,0,0,46); gl.addColorStop(0,'rgba(255,200,110,.35)'); gl.addColorStop(1,'rgba(255,200,110,0)');
   g.fillStyle = gl; g.beginPath(); g.arc(0,0,46,0,7); g.fill();
-  for(let i=0;i<8;i++){ g.save(); g.rotate(i*Math.PI/4 + Math.sin(tt*.6)*.05); g.fillStyle = i%2 ? '#c46a3a' : '#e38b4e'; g.beginPath(); g.ellipse(0,-15,6,12,0,0,7); g.fill(); g.restore(); }
+  if(G.state==='destiny'){
+    const u = G.destiny ? G.destiny.t/G.destiny.dur : 1;
+    const dg = g.createRadialGradient(0,0,6,0,0,70); dg.addColorStop(0,`rgba(255,225,140,${.55*Math.sin(u*Math.PI)+.15})`); dg.addColorStop(1,'rgba(255,225,140,0)');
+    g.fillStyle = dg; g.beginPath(); g.arc(0,0,70,0,7); g.fill();
+    g.strokeStyle = 'rgba(255,230,160,.55)'; g.lineWidth = 1.5;
+    for(let r=0;r<3;r++){ g.beginPath(); g.arc(0,0,22+r*10+((tt*40)%10), 0, 7); g.globalAlpha = .5-r*.15; g.stroke(); }
+    g.globalAlpha = 1;
+  }
+  for(let i=0;i<8;i++){ g.save(); g.rotate(i*Math.PI/4 + Math.sin(tt*.6)*.05 + (G.state==='destiny'?tt*3:0)); g.fillStyle = i%2 ? '#c46a3a' : '#e38b4e'; g.beginPath(); g.ellipse(0,-15,6,12,0,0,7); g.fill(); g.restore(); }
   g.save(); g.rotate(a - Math.PI/2);
   const rec = G.recoil*6;
   g.fillStyle = '#8a5a26'; g.strokeStyle='#3b230c'; g.lineWidth = 1.5;
@@ -761,36 +917,48 @@ function drawLauncher(g, tt){
   g.fillStyle = '#d39b4a'; g.fillRect(-8, 26-rec, 16, 4);
   g.restore();
   g.fillStyle = '#f6d38a'; g.beginPath(); g.arc(0,0,10,0,7); g.fill();
-  if(G.state==='aim'){ g.drawImage(SPR.ball, -11, -11, 22, 22); }
+  if(G.state==='aim'||G.state==='destiny'){ g.drawImage(SPR.ball, -11, -11, 22, 22); }
   g.restore();
 }
 function drawHUD(g, tt){
   g.textBaseline = 'middle';
   // top strip
-  g.textAlign = 'left'; g.fillStyle = '#f2a93b'; g.font = '800 11px "M PLUS Rounded 1c", sans-serif';
-  g.fillText('SCORE', BX, 18);
+  g.textAlign = 'left'; g.fillStyle = isVersus() ? PL().color : '#f2a93b'; g.font = '800 11px "M PLUS Rounded 1c", sans-serif';
+  g.fillText(isVersus() ? (PL().name.toUpperCase() + (G.state==='aim' ? ' TO SHOOT' : '')) : 'SCORE', BX, 18);
   g.fillStyle = '#f4e7c8'; g.font = '800 22px "M PLUS Rounded 1c", sans-serif';
-  g.fillText(G.score.toLocaleString(), BX, 38);
+  g.fillText(PL().score.toLocaleString(), BX, 38);
   g.textAlign = 'center'; g.font = '800 20px "Shippori Mincho B1", serif'; g.fillStyle = '#f4e7c8';
   const LV = levels();
   g.fillText(L.name, BX+W/2, 24);
-  g.font = '500 11px "M PLUS Rounded 1c", sans-serif'; g.fillStyle = '#b9ad93';
-  g.fillText(`Level ${G.levelIndex+1} of ${LV.length}`, BX+W/2, 42);
+  if(isVersus()){
+    // compact scoreboard: each player's name and score in their colour
+    g.font = '700 11px "M PLUS Rounded 1c", sans-serif';
+    const parts = G.players.map(p=>`${p.name} ${p.score.toLocaleString()}`);
+    const gap = 18; const widths = parts.map(t=>g.measureText(t).width);
+    let x = BX+W/2 - (widths.reduce((a,b)=>a+b,0) + gap*(parts.length-1))/2;
+    g.textAlign = 'left';
+    parts.forEach((t,k)=>{ g.fillStyle = G.players[k].color; g.globalAlpha = k===G.cur ? 1 : .65; g.fillText(t, x, 42); if(k===G.cur){ g.fillRect(x, 49, widths[k], 2); } x += widths[k] + gap; });
+    g.globalAlpha = 1; g.textAlign = 'center';
+  } else {
+    g.font = '500 11px "M PLUS Rounded 1c", sans-serif'; g.fillStyle = '#b9ad93';
+    const sub = MATCH.mode==='campaign' ? `${chapters()[MATCH.chapter].name} · ${MATCH.slot+1} of 5 · ${PMAP[MATCH.power].name}` : `Level ${G.levelIndex+1} of ${LV.length}`;
+    g.fillText(sub, BX+W/2, 42);
+  }
   g.textAlign = 'right'; g.font = '800 11px "M PLUS Rounded 1c", sans-serif'; g.fillStyle = '#f2a93b';
   g.fillText('AMBER LEFT', BX+W-110, 18);
   g.fillStyle = '#ffd27a'; g.font = '800 22px "M PLUS Rounded 1c", sans-serif';
   g.fillText(String(orangeLeft()), BX+W-110, 38);
   // left: balls tube
   const cx = BX/2;
-  g.textAlign='center'; g.fillStyle = '#f2a93b'; g.font = '800 10px "M PLUS Rounded 1c", sans-serif';
+  g.textAlign='center'; g.fillStyle = isVersus() ? PL().color : '#f2a93b'; g.font = '800 10px "M PLUS Rounded 1c", sans-serif';
   g.fillText('BALLS', cx, BY+12);
   g.fillStyle = 'rgba(8,12,32,.7)'; roundRect(g, cx-16, BY+24, 32, H-40, 16); g.fill();
   g.strokeStyle = 'rgba(242,169,59,.3)'; g.lineWidth=1; roundRect(g, cx-16, BY+24, 32, H-40, 16); g.stroke();
-  if(S.infinite){ g.fillStyle = '#f4e7c8'; g.font = '800 30px "M PLUS Rounded 1c", sans-serif'; g.fillText('∞', cx, BY+H/2); }
+  if(R.infinite){ g.fillStyle = '#f4e7c8'; g.font = '800 30px "M PLUS Rounded 1c", sans-serif'; g.fillText('∞', cx, BY+H/2); }
   else {
-    const maxShow = 22; const n = Math.min(G.balls, maxShow);
+    const maxShow = 22; const n = Math.min(PL().balls, maxShow);
     for(let i=0;i<n;i++){ const y = BY+H-34 - i*25; g.drawImage(SPR.ball, cx-13, y-13, 26, 26); }
-    g.fillStyle = '#f4e7c8'; g.font = '800 15px "M PLUS Rounded 1c", sans-serif'; g.fillText(String(G.balls), cx, BY+H+2 > CH-8 ? CH-10 : BY+H+2);
+    g.fillStyle = '#f4e7c8'; g.font = '800 15px "M PLUS Rounded 1c", sans-serif'; g.fillText(String(PL().balls), cx, BY+H+2 > CH-8 ? CH-10 : BY+H+2);
   }
   // right: amber meter + powers
   const rx = BX+W+40, top = BY+24, hh = 360;
@@ -804,11 +972,11 @@ function drawHUD(g, tt){
   let py = top + hh + 26;
   g.fillStyle = '#4fcf8e'; g.font = '800 10px "M PLUS Rounded 1c", sans-serif'; g.fillText('POWERS', rx, py); py += 18;
   const active = [];
-  for(const id of Object.keys(G.charges)) if(G.charges[id]>0) active.push([PMAP[id].name, G.charges[id]]);
-  if(S.cheatDestiny) active.push(['Destiny Shot','∞']);
-  if(S.cheatFlame) active.push(['Ember Stone','∞']);
-  if(S.cheatBridge) active.push(['Moon Bridge','∞']);
-  if(G.state==='fly' && (G.bridges||0)>0 && !S.cheatBridge) active.push(['Moon Bridge', G.bridges]);
+  for(const id of Object.keys(PL().charges)) if(PL().charges[id]>0) active.push([PMAP[id].name, PL().charges[id]]);
+  if(R.cheatDestiny) active.push(['Destiny Shot','∞']);
+  if(R.cheatFlame) active.push(['Ember Stone','∞']);
+  if(R.cheatBridge) active.push(['Moon Bridge','∞']);
+  if(G.state==='fly' && (G.bridges||0)>0 && !R.cheatBridge) active.push(['Moon Bridge', G.bridges]);
   if(G.state==='fly' && (G.secondWind||0)>0) active.push(['Second Wind', G.secondWind]);
   g.font = '700 10px "M PLUS Rounded 1c", sans-serif';
   if(!active.length){ g.fillStyle = 'rgba(244,231,200,.45)'; g.fillText('none', rx, py); }
@@ -901,7 +1069,7 @@ window.addEventListener('gamepadconnected', ()=>{ document.body.classList.add('p
 let navIndex = 0;
 function navItems(){
   const ov = currentOverlay(); if(!ov) return [];
-  return [...ov.querySelectorAll('.nav, .seg button, input.toggle, input[type=range], .pw, .lvl, select')].filter(el => el.offsetParent !== null && !el.disabled);
+  return [...ov.querySelectorAll('.nav, .seg button, input.toggle, input[type=range], input[type=text], .pw, .lvl, .slot, select')].filter(el => el.offsetParent !== null && !el.disabled);
 }
 function navFocus(i){ const it = navItems(); if(!it.length) return; navIndex = (i + it.length) % it.length; const el = it[navIndex]; el.focus({preventScroll:false}); el.scrollIntoView({block:'nearest'}); }
 function navMove(dir){
@@ -927,7 +1095,7 @@ function navMove(dir){
 function navActivate(){ const el = document.activeElement; if(!el || el===document.body){ navFocus(0); return; } if(el.type==='range') return; el.click(); sfx('ui'); }
 
 /* ================= overlays ================= */
-const OV = ['title','levels','how','settings','pause','result'].reduce((o,id)=>(o[id]=document.getElementById(id),o),{});
+const OV = ['title','levels','how','settings','pause','result','campaign','powerpick','versus'].reduce((o,id)=>(o[id]=document.getElementById(id),o),{});
 let overlayStack = [];
 function currentOverlay(){ for(const id of Object.keys(OV)) if(!OV[id].hidden && id===overlayStack[overlayStack.length-1]) return OV[id]; return null; }
 function showOverlay(id, push){
@@ -963,17 +1131,20 @@ function toggleMute(){ S.muted = !S.muted; save('ld.settings',S); applyVolumes()
 function resumeGame(){ G.mode='play'; sfx('setPaused', false); showOverlay(null); lastFrame = performance.now(); }
 function toTitle(){ G.mode='title'; sfx('stopFever'); music('stop'); sfx('setPaused', false); showOverlay('title'); }
 
-document.getElementById('btnPlay').onclick = ()=>{ unlockAudio(); startLevel(progress.last||0); };
-document.getElementById('btnLevels').onclick = ()=>{ buildLevelGrid(); showOverlay('levels', true); };
+document.getElementById('btnCampaign').onclick = ()=>{ unlockAudio(); buildCampaign(); showOverlay('campaign', true); };
+document.getElementById('btnVersus').onclick = ()=>{ unlockAudio(); buildVersus(); showOverlay('versus', true); };
+document.getElementById('btnMap').onclick = ()=>{ G.mode='title'; music('stop'); buildCampaign(); showOverlay('title'); showOverlay('campaign', true); };
+document.getElementById('btnLevels').onclick = ()=>{ unlockAudio(); buildLevelGrid(); showOverlay('levels', true); };
 document.getElementById('btnSettings').onclick = ()=>{ buildSettings(); showOverlay('settings', true); };
 document.getElementById('btnHow').onclick = ()=>{ showOverlay('how', true); };
 document.getElementById('btnPause').onclick = pauseGame;
 document.getElementById('btnResume').onclick = resumeGame;
 document.getElementById('btnPauseSettings').onclick = ()=>{ buildSettings(); showOverlay('settings', true); };
-document.getElementById('btnRestart').onclick = ()=>{ sfx('setPaused', false); sfx('stopFever'); startLevel(G.levelIndex); };
+document.getElementById('btnRestart').onclick = ()=>{ sfx('setPaused', false); sfx('stopFever'); sfx('stopDestinyThink'); startLevel(G.levelIndex, MATCH); };
 document.getElementById('btnQuit').onclick = toTitle;
-document.getElementById('btnNext').onclick = ()=>{ startLevel(G.levelIndex+1); };
-document.getElementById('btnRetry').onclick = ()=>{ startLevel(G.levelIndex); };
+document.getElementById('btnNext').onclick = ()=>{ if(nextAction) nextAction(); };
+document.getElementById('btnRetry').onclick = ()=>{ startLevel(G.levelIndex, MATCH); };
+let nextAction = null;
 document.getElementById('btnResTitle').onclick = toTitle;
 document.getElementById('btnClassic').onclick = ()=>{ const keep = {music:S.music, sfx:S.sfx}; S = Object.assign({}, JSON.parse(JSON.stringify(CLASSIC)), keep); save('ld.settings', S); buildSettings(); sfx('ui'); };
 document.querySelectorAll('[data-back]').forEach(b=> b.onclick = ()=>{ save('ld.settings', S); popOverlay(); sfx('ui'); });
@@ -985,25 +1156,187 @@ function buildLevelGrid(){
     const best = progress.best[i];
     b.innerHTML = `<span class="n">Level ${i+1}</span><b></b><span class="s">${best ? 'Best '+best.toLocaleString() : (progress.cleared[i]?'Cleared':'Not cleared yet')}</span>`;
     b.querySelector('b').textContent = lv.name;
-    b.onclick = ()=>{ unlockAudio(); startLevel(i); };
+    b.onclick = ()=>{ unlockAudio(); startLevel(i, {mode:'free'}); };
     grid.appendChild(b);
   });
 }
 
-function showResult(won, bonus){
-  G.mode = 'result';
-  document.getElementById('resTitle').textContent = won ? 'River cleared' : 'Out of moonstones';
-  document.getElementById('resScore').textContent = G.score.toLocaleString();
-  const st = document.getElementById('resStats'); st.innerHTML = '';
-  const rows = [['Level', `${G.levelIndex+1}. ${L.name}`], ['Shots fired', G.totalShots]];
-  if(won && !S.infinite) rows.push(['Unused ball bonus', bonus.toLocaleString()]);
-  if(!won) rows.push(['Amber still unlit', orangeLeft()]);
-  const best = progress.best[G.levelIndex]; if(best) rows.push(['Best on this level', best.toLocaleString()]);
-  for(const [a,b] of rows){ const dt = document.createElement('dt'); dt.textContent=a; const dd = document.createElement('dd'); dd.textContent=b; st.append(dt,dd); }
-  document.getElementById('btnNext').hidden = !won;
-  showOverlay('result');
-  if(won) sfx('levelClear');
+function resetResultPanel(){
+  for(const id of ['resStars','resRanking','resNote','btnMap']) document.getElementById(id).hidden = true;
+  document.getElementById('resStats').innerHTML = '';
+  document.getElementById('btnRetry').textContent = 'Play again';
 }
+function fillStats(rows){
+  const st = document.getElementById('resStats'); st.innerHTML = '';
+  for(const [a,b] of rows){ const dt = document.createElement('dt'); dt.textContent=a; const dd = document.createElement('dd'); dd.textContent=b; st.append(dt,dd); }
+}
+function showResult(res){
+  G.mode = 'result';
+  resetResultPanel();
+  const won = res.won, campaign = MATCH.mode==='campaign';
+  document.getElementById('resTitle').textContent = won ? 'River cleared' : 'Out of moonstones';
+  document.getElementById('resScore').textContent = PL().score.toLocaleString();
+  const rows = [['Level', campaign ? `${chapters()[MATCH.chapter].name} ${MATCH.slot+1}. ${L.name}` : `${G.levelIndex+1}. ${L.name}`], ['Shots fired', G.totalShots]];
+  if(won && !R.infinite) rows.push(['Unused ball bonus', `${res.spare} × 10,000`]);
+  if(!won) rows.push(['Amber still unlit', orangeLeft()]);
+  const best = campaign ? camp().best[G.levelIndex] : progress.best[G.levelIndex];
+  if(best) rows.push(['Best on this level', best.toLocaleString()]);
+  fillStats(rows);
+  const next = document.getElementById('btnNext');
+  nextAction = null;
+  if(campaign){
+    document.getElementById('btnMap').hidden = false;
+    const starsEl = document.getElementById('resStars'); starsEl.hidden = false;
+    starsEl.innerHTML = '<span>★</span><span>★</span><span>★</span>';
+    starsEl.setAttribute('aria-label', `${res.stars} of 3 stars`);
+    if(won){
+      [...starsEl.children].forEach((el,k)=>{ if(k<res.stars) setTimeout(()=>{ el.classList.add('on'); sfx('star', k+1); }, 450 + k*350); });
+      const notes = [];
+      if(res.stars < 3) notes.push(`Next star: finish with ${STAR_SPARE[res.stars-1]} balls to spare.`);
+      if(res.chapterCleared) notes.push(`Chapter cleared!`);
+      if(res.unlocked.length) notes.push(`New power${res.unlocked.length>1?'s':''} unlocked: ${res.unlocked.map(id=>PMAP[id].name).join(' and ')}.`);
+      const note = document.getElementById('resNote'); note.textContent = notes.join(' '); note.hidden = !notes.length;
+      const delay = 450 + res.stars*350 + 200;
+      if(res.chapterCleared) setTimeout(()=>sfx('chapterClear'), delay);
+      if(res.unlocked.length) setTimeout(()=>sfx('powerUnlocked'), delay + (res.chapterCleared ? 2600 : 0));
+      const nx = nextCampaignSlot();
+      if(nx){ next.textContent = 'Next level'; nextAction = ()=>openPowerPick(nx.chapter, nx.slot); }
+    }
+  } else if(won){
+    next.textContent = 'Next level'; nextAction = ()=>startLevel(G.levelIndex+1, {mode:'free'});
+  }
+  next.hidden = !nextAction;
+  showOverlay('result');
+  if(won && !(campaign && res.chapterCleared)) sfx('levelClear');
+}
+function showVersusResult(res){
+  G.mode = 'result';
+  resetResultPanel();
+  const ranked = G.players.map((p,k)=>({...p, k})).sort((a,b)=>b.score-a.score);
+  const top = ranked[0].score;
+  const winners = ranked.filter(p=>p.score===top);
+  document.getElementById('resTitle').textContent = winners.length>1 ? 'A tie' : `${winners[0].name} wins`;
+  document.getElementById('resScore').textContent = top.toLocaleString();
+  const ol = document.getElementById('resRanking'); ol.hidden = false; ol.innerHTML = '';
+  ranked.forEach((p,n)=>{
+    const li = document.createElement('li'); if(p.score===top) li.className = 'win';
+    li.innerHTML = '<span class="pos"></span><span class="nm"></span><span class="sc"></span>';
+    li.querySelector('.pos').textContent = n===0 || p.score!==ranked[n-1].score ? (n+1) : '=';
+    const nm = li.querySelector('.nm'); nm.textContent = p.name; nm.style.color = p.color;
+    li.querySelector('.sc').textContent = p.score.toLocaleString();
+    ol.appendChild(li);
+  });
+  const rows = [['Board', L.name], ['Shots fired', G.totalShots]];
+  if(res.won && G.finisher!=null) rows.push(['Lit the last amber', G.players[G.finisher].name]);
+  else rows.push(['Amber still unlit', orangeLeft()]);
+  fillStats(rows);
+  const next = document.getElementById('btnNext');
+  next.textContent = 'New match'; nextAction = ()=>{ G.mode='title'; music('stop'); buildVersus(); showOverlay('title'); showOverlay('versus', true); };
+  next.hidden = false;
+  document.getElementById('btnRetry').textContent = 'Rematch';
+  showOverlay('result');
+  sfx('matchEnd');
+}
+
+/* ================= campaign UI ================= */
+function buildCampaign(){
+  const list = document.getElementById('chapterList'); list.innerHTML = '';
+  const LV = levels();
+  chapters().forEach((ch, c)=>{
+    const open = chapterOpen(c);
+    const box = document.createElement('section'); box.className = 'chapter' + (open ? '' : ' locked');
+    const stars = ch.levels.reduce((n,i)=>n+levelStars(i),0);
+    box.innerHTML = `<div class="chapter-head"><div><span class="n">Chapter ${c+1}</span><h4></h4></div><span class="tally">${stars} / ${ch.levels.length*3} ★</span></div><p class="blurb"></p>`;
+    box.querySelector('h4').textContent = ch.name;
+    box.querySelector('.blurb').textContent = open ? (ch.blurb||'') : `Clear ${chapters()[c-1].name} to open this chapter.`;
+    if(c+1 < POWER_UNLOCKS.length){
+      const u = document.createElement('p'); u.className = 'unl';
+      u.textContent = (chapterCleared(c) ? 'Unlocked: ' : 'Clear it to unlock: ') + POWER_UNLOCKS[c+1].map(id=>PMAP[id].name).join(' and ');
+      box.appendChild(u);
+    }
+    const slots = document.createElement('div'); slots.className = 'slots';
+    ch.levels.forEach((li, k)=>{
+      const b = document.createElement('button'); b.type = 'button'; b.className = 'slot'; b.id = `slot-${c}-${k}`;
+      const ok = slotOpen(c,k); b.disabled = !ok;
+      const n = levelStars(li);
+      b.innerHTML = `<span class="k">${c+1}–${k+1}</span><b></b><span class="st ${n>=1?'on':''}">★</span>`;
+      b.querySelector('b').textContent = ok ? (LV[li] ? LV[li].name : '?') : 'Locked';
+      const stEl = b.querySelector('.st'); stEl.innerHTML = [0,1,2].map(j=>`<span class="st ${j<n?'on':''}">★</span>`).join(''); stEl.className = '';
+      b.setAttribute('aria-label', ok ? `${LV[li]?.name}, ${n} of 3 stars` : 'Locked');
+      b.onclick = ()=>{ sfx('ui'); openPowerPick(c, k); };
+      slots.appendChild(b);
+    });
+    box.appendChild(slots);
+    list.appendChild(box);
+  });
+}
+let pick = {chapter:0, slot:0, power:'destiny'};
+function openPowerPick(c, k){
+  const LV = levels(), ch = chapters()[c], li = ch.levels[k];
+  const unl = unlockedPowers();
+  pick = {chapter:c, slot:k, power: unl.includes(camp().lastPower) ? camp().lastPower : unl[0]};
+  document.getElementById('ppTitle').textContent = LV[li].name;
+  document.getElementById('ppSub').textContent = `${ch.name} · level ${k+1} of ${ch.levels.length}`;
+  const grid = document.getElementById('ppGrid'); grid.innerHTML = '';
+  for(const P of POWERS){
+    const b = document.createElement('button'); b.type = 'button'; b.className = 'pw'; b.setAttribute('role','radio'); b.id = 'pp-'+P.id;
+    const ok = unl.includes(P.id); b.disabled = !ok;
+    b.setAttribute('aria-checked', String(P.id===pick.power));
+    b.innerHTML = '<i class="dot"></i><div><b></b><span></span></div>';
+    b.querySelector('b').textContent = P.name;
+    b.querySelector('span').textContent = P.desc;
+    if(!ok){ const l = document.createElement('span'); l.className = 'lock'; l.textContent = `Unlocks after ${chapters()[unlockChapterFor(P.id)-1]?.name || 'a later chapter'}`; b.querySelector('div').appendChild(l); }
+    b.onclick = ()=>{ pick.power = P.id; grid.querySelectorAll('.pw').forEach(x=>x.setAttribute('aria-checked', String(x===b))); sfx('ui'); };
+    b.ondblclick = ()=>document.getElementById('ppStart').click();
+    grid.appendChild(b);
+  }
+  if(G.mode==='result'){ G.mode='title'; showOverlay('title'); }
+  showOverlay('powerpick', true);
+}
+document.getElementById('ppStart').onclick = ()=>{
+  camp().lastPower = pick.power; save('ld.progress', progress);
+  startLevel(chapters()[pick.chapter].levels[pick.slot], {mode:'campaign', chapter:pick.chapter, slot:pick.slot, power:pick.power});
+};
+
+/* ================= versus UI ================= */
+let vs = load('ld.versus', {count:2, names:['Player 1','Player 2','Player 3','Player 4'], level:-1});
+function buildVersus(){
+  const cnt = document.getElementById('vsCount'); cnt.innerHTML = '';
+  for(const n of [2,3,4]){
+    const b = document.createElement('button'); b.type='button'; b.setAttribute('role','radio'); b.id='vs-count-'+n; b.textContent = n;
+    b.setAttribute('aria-checked', String(vs.count===n));
+    b.onclick = ()=>{ vs.count = n; save('ld.versus', vs); buildVersus(); document.getElementById('vs-count-'+n).focus(); sfx('ui'); };
+    cnt.appendChild(b);
+  }
+  const names = document.getElementById('vsNames'); names.innerHTML = '';
+  for(let k=0;k<vs.count;k++){
+    const l = document.createElement('label'); l.style.color = PLAYER_COLORS[k];
+    l.append(`Player ${k+1}`);
+    const i = document.createElement('input'); i.type='text'; i.id='vs-name-'+k; i.maxLength = 16; i.value = vs.names[k] || `Player ${k+1}`; i.style.borderLeftColor = PLAYER_COLORS[k];
+    i.autocomplete = 'off'; i.spellcheck = false;
+    i.oninput = ()=>{ vs.names[k] = i.value; save('ld.versus', vs); };
+    i.addEventListener('keydown', e=>{ e.stopPropagation(); if(e.key==='Enter') i.blur(); });
+    l.appendChild(i); names.appendChild(l);
+  }
+  const grid = document.getElementById('vsLevels'); grid.innerHTML = '';
+  const LV = levels();
+  const opts = [[-1, 'Surprise me', 'A random board']].concat(LV.map((lv,i)=>[i, lv.name, `Level ${i+1}`]));
+  for(const [i, name, sub] of opts){
+    const b = document.createElement('button'); b.type='button'; b.className='lvl'; b.setAttribute('role','radio'); b.id = 'vs-lvl-'+i;
+    b.setAttribute('aria-checked', String(vs.level===i));
+    b.innerHTML = '<span class="n"></span><b></b>'; b.querySelector('.n').textContent = sub; b.querySelector('b').textContent = name;
+    b.onclick = ()=>{ vs.level = i; save('ld.versus', vs); grid.querySelectorAll('.lvl').forEach(x=>x.setAttribute('aria-checked', String(x===b))); sfx('ui'); };
+    grid.appendChild(b);
+  }
+}
+document.getElementById('vsStart').onclick = ()=>{
+  const players = [];
+  for(let k=0;k<vs.count;k++){ const n = (vs.names[k]||'').trim(); players.push(n || `Player ${k+1}`); }
+  const LV = levels();
+  const lvl = vs.level>=0 && vs.level<LV.length ? vs.level : (Math.random()*LV.length|0);
+  startLevel(lvl, {mode:'versus', players});
+  sfx('turnChange', 0);
+};
 
 /* ================= settings UI ================= */
 function buildSettings(){
@@ -1078,5 +1411,5 @@ buildSprites(); buildBG(); initSkyLanterns(); resize();
 showOverlay('title');
 requestAnimationFrame(t=>{ lastFrame = t; frame(t); });
 // testing hooks
-window.__LD = { G, get L(){return L;}, S:()=>S, startLevel, fire, simulate, destinyAngle, update, setAim:a=>{G.aim=a;} };
+window.__LD = { G, get L(){return L;}, S:()=>S, R:()=>R, MATCH:()=>MATCH, startLevel, fire, simulate, destinyAngle, update, setAim:a=>{G.aim=a;} };
 })();
