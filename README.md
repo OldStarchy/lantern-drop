@@ -71,11 +71,19 @@ build.js         inlines everything into index.html
 Requires Node 18 or later.
 
 ```sh
-npm test         # level geometry checks and audio API checks
-npm run build    # regenerates index.html and dist/lantern-drop.html
+npm ci                          # installs Playwright (dev only)
+npm test                        # level geometry checks and audio API checks
+npm run build                   # regenerates index.html and dist/lantern-drop.html
+npx playwright install chromium # once, for the smoke test
+npm run test:smoke              # plays every level headlessly in Chromium
+npm run test:all                # all of the above
 ```
 
-Edit files in `src/`, then rebuild. `index.html` is committed so GitHub Pages can serve it directly.
+Edit files in `src/`, then rebuild and commit `index.html` along with your changes.
+
+### CI and deployment
+
+`.github/workflows/ci.yml` runs on every push and pull request. It runs the unit tests, rebuilds the game, fails if the committed `index.html` doesn't match the build, and runs the browser smoke test. Pushes to `main` then deploy to GitHub Pages. The repo's Pages source must be set to **GitHub Actions**.
 
 ### Level format
 

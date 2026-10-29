@@ -1,11 +1,16 @@
 {
   "name": "lantern-drop",
   "version": "1.0.0",
-  "description": "An original peg-shooting game set at a night lantern festival. Plain browser JavaScript, no dependencies.",
+  "description": "An original peg-shooting game set at a night lantern festival. Plain browser JavaScript with no runtime dependencies.",
   "private": true,
   "license": "UNLICENSED",
   "scripts": {
     "build": "node build.js",
-    "test": "node test/levels.test.js && node test/audio.test.js"
+    "test": "node test/levels.test.js && node test/audio.test.js",
+    "test:smoke": "node test/smoke.test.js",
+    "test:all": "npm test && npm run build && npm run test:smoke"
+  },
+  "devDependencies": {
+    "playwright": "1.63.0"
   }
 }
